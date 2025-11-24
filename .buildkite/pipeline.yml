@@ -3,4 +3,4 @@ steps:
     commands:
       - ".buildkite/scripts/run_qwen_offline_example.sh"
     agents:
-      queue: "gpu_1_queue"
+      queue: "gpu_1_queue" # g6.4xlarge instance on AWS, has 1 L4 GPU
