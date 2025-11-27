@@ -20,8 +20,4 @@ source .venv/bin/activate
 EXAMPLE_DIR="examples/offline_inference/qwen2_5_omni"
 cd "${EXAMPLE_DIR}"
 
-if [[ ! -f top100.txt ]]; then
-  echo "Hello from vLLM-omni Buildkite smoke test." > top100.txt
-fi
-
-bash run_multiple_prompts.sh
+bash run_single_prompt.sh
