@@ -23,6 +23,7 @@ steps:
 - label: "Omni Model Test with H100"
   timeout_in_minutes: 20
   gpu: h100
+  num_gpus: 2
   commands:
     - export VLLM_WORKER_MULTIPROC_METHOD=spawn
     - pytest -s -v tests/multi_stages_h100/
