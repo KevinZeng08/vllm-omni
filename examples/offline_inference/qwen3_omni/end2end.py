@@ -13,6 +13,7 @@ import librosa
 import numpy as np
 import soundfile as sf
 from PIL import Image
+import vllm
 from vllm import SamplingParams
 from vllm.assets.audio import AudioAsset
 from vllm.assets.image import ImageAsset
@@ -237,6 +238,7 @@ query_map = {
 
 def main(args):
     model_name = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+    print(f"="*20,"\n",f"vllm version: {vllm.__version__}","\n","="*20)
 
     # Get paths from args
     video_path = getattr(args, "video_path", None)
@@ -302,8 +304,8 @@ def main(args):
 
     sampling_params_list = [
         thinker_sampling_params,
-        talker_sampling_params,  # code predictor is integrated into talker for Qwen3 Omni
-        code2wav_sampling_params,
+        # talker_sampling_params,  # code predictor is integrated into talker for Qwen3 Omni
+        # code2wav_sampling_params,
     ]
 
     if args.txt_prompts is None:
