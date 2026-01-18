@@ -6,7 +6,8 @@ This module provides a robust, type-safe approach to building stage configuratio
 programmatically, replacing ad-hoc dictionary construction.
 """
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass
 from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
@@ -144,8 +145,6 @@ class StageConfigFactory:
         Returns:
             Normalized cache configuration dictionary or None
         """
-        import json
-        
         if isinstance(cache_config, str):
             try:
                 cache_config = json.loads(cache_config)
@@ -234,6 +233,7 @@ class StageConfigFactory:
         Returns:
             List containing a single dict for the diffusion stage (not wrapped in OmegaConf)
         """
+        # Local import to avoid potential circular dependencies with diffusion module
         from vllm_omni.diffusion.data import DiffusionParallelConfig
         
         # Normalize cache configuration
