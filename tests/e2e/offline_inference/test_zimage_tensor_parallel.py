@@ -129,8 +129,8 @@ def test_zimage_tensor_parallel_tp2(tmp_path: Path):
     if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
         pytest.skip("Z-Image TP=2 requires >= 2 CUDA devices.")
 
-    height = 256
-    width = 256
+    height = 512
+    width = 512
     num_inference_steps = 2
     seed = 42
 
