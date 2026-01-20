@@ -1,6 +1,9 @@
 import os
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+# Set CPU device for CI environments without GPU
+if "VLLM_TARGET_DEVICE" not in os.environ:
+    os.environ["VLLM_TARGET_DEVICE"] = "cpu"
 
 import base64
 import socket

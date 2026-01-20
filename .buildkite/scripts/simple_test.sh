@@ -50,9 +50,6 @@ VENV_PYTHON="${VENV_DIR}/bin/python"
 "${UV_BIN}" pip install --python "${VENV_PYTHON}" vllm==0.14.0
 "${UV_BIN}" pip install --python "${VENV_PYTHON}" -e ".[dev]"
 
-# Set CPU device for tests running without GPU
-export VLLM_TARGET_DEVICE=cpu
-
 "${VENV_PYTHON}" -m pytest -v -s tests/entrypoints/
 "${VENV_PYTHON}" -m pytest -v -s tests/diffusion/cache/
 "${VENV_PYTHON}" -m pytest -v -s tests/model_executor/models/qwen2_5_omni/test_audio_length.py
