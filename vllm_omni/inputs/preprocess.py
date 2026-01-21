@@ -20,6 +20,42 @@ class OmniInputPreprocessor(InputPreprocessor):
     Supports processing tokens, embeddings, text, and multimodal inputs.
     """
 
+    def _process_text(
+        self,
+        parsed_content: TextPrompt,
+        tokenization_kwargs: dict[str, Any] | None = None,
+        *,
+        mm_uuids: MultiModalUUIDDict | None = None,
+    ) -> OmniTokenInputs | MultiModalInputs:
+        prompt_text = parsed_content["prompt"]
+
+        inputs: OmniTokenInputs | MultiModalInputs
+        if multi_modal_data := parsed_content.get("multi_modal_data"):
+            inputs = self._process_multimodal(
+                prompt_text,
+                multi_modal_data,
+                parsed_content.get("mm_processor_kwargs") or {},
+                tokenization_kwargs=tokenization_kwargs,
+                mm_uuids=mm_uuids,
+            )
+            inputs["prompt_embeds"] = parsed_content.get("prompt_embeds")
+            inputs["additional_information"] = parsed_content.get("additional_information")
+        else:
+            prompt_token_ids = self._tokenize_prompt(
+                prompt_text,
+                tokenization_kwargs=tokenization_kwargs,
+            )
+            inputs = token_inputs_omni(
+                prompt_token_ids,
+                prompt_embeds=parsed_content.get("prompt_embeds"),
+                additional_information=parsed_content.get("additional_information"),
+            )
+
+        if cache_salt := parsed_content.get("cache_salt"):
+            inputs["cache_salt"] = cache_salt
+
+        return inputs
+
     def _process_tokens(
         self,
         parsed_content: TokensPrompt,
