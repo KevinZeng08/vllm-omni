@@ -1,20 +1,43 @@
 ARG VLLM_BASE_IMAGE=vllm/vllm-openai
 ARG VLLM_BASE_TAG=v0.14.0
 FROM ${VLLM_BASE_IMAGE}:${VLLM_BASE_TAG}
+
 ARG APP_DIR=/workspace/vllm-omni
 WORKDIR ${APP_DIR}
 
-COPY . .
-
-# Install system dependencies
+# System deps
 RUN apt-get update && \
     apt-get install -y ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install vllm-omni into the same uv-managed Python environment used by the base image.
+# Copy after system deps (optional, but keeps layers cleaner)
+COPY . .
+
+# ---- 1) Install vLLM nightly FIRST (remove pinned vLLM from base image) ----
+# Provide ONE of these at build time:
+#   - VLLM_NIGHTLY_INDEX_URL (preferred) OR
+#   - VLLM_WHEEL_URL (explicit wheel)
+ARG VLLM_NIGHTLY_INDEX_URL=
+ARG VLLM_WHEEL_URL=
+
+RUN set -eux; \
+    PY="$(python3 -c 'import sys; print(sys.executable)')"; \
+    uv pip uninstall --python "$PY" -y vllm || true; \
+    if [ -n "$VLLM_WHEEL_URL" ]; then \
+      uv pip install --python "$PY" --no-cache-dir "$VLLM_WHEEL_URL"; \
+    elif [ -n "$VLLM_NIGHTLY_INDEX_URL" ]; then \
+      uv pip install --python "$PY" --no-cache-dir -U --pre \
+        --extra-index-url "$VLLM_NIGHTLY_INDEX_URL" \
+        vllm; \
+    else \
+      echo "ERROR: set VLLM_WHEEL_URL or VLLM_NIGHTLY_INDEX_URL"; \
+      exit 1; \
+    fi; \
+    python3 -c "import vllm; print('vllm installed:', getattr(vllm,'__version__','<unknown>'))"
+
+# ---- 2) THEN install your package into the same env ----
 RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir ".[dev]"
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
-
 ENTRYPOINT []
