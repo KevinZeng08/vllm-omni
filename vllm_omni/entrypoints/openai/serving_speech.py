@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.responses import Response
-from vllm.entrypoints.openai.serving_engine import OpenAIServing
+from vllm.entrypoints.openai.engine.serving import OpenAIServing
 from vllm.logger import init_logger
 from vllm.utils import random_uuid
 

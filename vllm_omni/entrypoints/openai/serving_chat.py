@@ -30,11 +30,7 @@ from vllm.entrypoints.chat_utils import (
     make_tool_call_id,
     resolve_chat_template_content_format,
 )
-from vllm.entrypoints.openai.parser.harmony_utils import (
-    get_streamable_parser_for_assistant,
-    parse_chat_output,
-)
-from vllm.entrypoints.openai.protocol import (
+from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionNamedToolChoiceParam,
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -42,6 +38,9 @@ from vllm.entrypoints.openai.protocol import (
     ChatCompletionResponseStreamChoice,
     ChatCompletionStreamResponse,
     ChatMessage,
+)
+from vllm.entrypoints.openai.chat_completion.serving import OpenAIServingChat
+from vllm.entrypoints.openai.engine.protocol import (
     DeltaFunctionCall,
     DeltaMessage,
     DeltaToolCall,
@@ -51,15 +50,15 @@ from vllm.entrypoints.openai.protocol import (
     FunctionDefinition,
     PromptTokenUsageInfo,
     RequestResponseMetadata,
-    ResponsesRequest,
     ToolCall,
     UsageInfo,
 )
-from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
-from vllm.entrypoints.openai.serving_engine import (
-    ChatLikeRequest,
-    clamp_prompt_logprobs,
+from vllm.entrypoints.openai.engine.serving import ChatLikeRequest, clamp_prompt_logprobs
+from vllm.entrypoints.openai.parser.harmony_utils import (
+    get_streamable_parser_for_assistant,
+    parse_chat_output,
 )
+from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
 from vllm.entrypoints.openai.utils import maybe_filter_parallel_tool_calls
 from vllm.entrypoints.utils import should_include_usage
 from vllm.inputs.data import PromptType, TokensPrompt
@@ -167,7 +166,10 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
 
             model_name = self.models.model_name(lora_request)
 
-            tokenizer = await self.engine_client.get_tokenizer()
+            renderer = self.renderer
+            tokenizer = renderer.get_tokenizer()
+            if tokenizer is None:
+                tokenizer = await self.engine_client.get_tokenizer()
 
             tool_parser = self.tool_parser
 
@@ -224,7 +226,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                     engine_prompts,
                 ) = await self._preprocess_chat(
                     request,
-                    tokenizer,
+                    renderer,
                     request.messages,
                     chat_template=request.chat_template or self.chat_template,
                     chat_template_content_format=self.chat_template_content_format,
@@ -323,7 +325,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
     async def _preprocess_chat(
         self,
         request: ChatLikeRequest | ResponsesRequest,
-        tokenizer: TokenizerLike,
+        renderer: Any,
         messages: list[ChatCompletionMessageParam],
         chat_template: str | None,
         chat_template_content_format: ChatTemplateContentFormatOption,
@@ -341,6 +343,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         list[TokensPrompt],
     ]:
         model_config = self.model_config
+        tokenizer = renderer.get_tokenizer() if renderer is not None else None
 
         resolved_content_format = resolve_chat_template_content_format(
             chat_template,
