@@ -59,10 +59,21 @@ class OmniGenerationScheduler(VLLMScheduler):
         # Temporary queue: preserve waiting order, do not disturb non-diffusion requests
         skipped_waiting_requests = create_request_queue(self.policy)
         req_index = 0
+        # OMNI: Track requests that are already finished (e.g., marked by connector)
+        # These should be removed from running and not scheduled
+        already_finished_reqs: set[Request] = set()
         while req_index < len(self.running) and token_budget > 0:
             request = self.running[req_index]
             if self.omni_connector is not None:
                 get_chunk_for_generation(self.omni_connector, request)
+
+            # OMNI: Skip requests that are already finished or not in self.requests
+            # This can happen when connector marks request as finished
+            if request.status == RequestStatus.FINISHED_STOPPED or request.request_id not in self.requests:
+                already_finished_reqs.add(request)
+                req_index += 1
+                continue
+
             num_computed_tokens = request.num_computed_tokens
             required_tokens = max(len(request.prompt_token_ids) - num_computed_tokens, 1)
             num_new_tokens = min(required_tokens, token_budget)
@@ -86,12 +97,24 @@ class OmniGenerationScheduler(VLLMScheduler):
             scheduled_running_reqs.append(request)
             req_index += 1
 
+        # OMNI: Remove already finished requests from running queue
+        if already_finished_reqs:
+            self.running = remove_all(self.running, already_finished_reqs)
+
         # Fast path selection and scheduling (treat all as diffusion requests,
         # independent of pooling_params)
         while self.waiting and token_budget > 0 and len(self.running) < self.max_num_running_reqs:
             request = self.waiting.peek_request()
             if self.omni_connector is not None:
                 get_chunk_for_generation(self.omni_connector, request)
+
+            # OMNI: Skip requests that are already finished or not in self.requests
+            # This can happen when connector marks request as finished
+            if request.status == RequestStatus.FINISHED_STOPPED or request.request_id not in self.requests:
+                # Pop the finished request from waiting queue and don't schedule it
+                self.waiting.pop_request()
+                continue
+
             # Uniformly treat as diffusion. A feature flag can be added later
             # via config or request tag.
 

@@ -1,5 +1,5 @@
 ARG VLLM_BASE_IMAGE=vllm/vllm-openai
-ARG VLLM_BASE_TAG=v0.14.0
+ARG VLLM_BASE_TAG=v0.15.0
 FROM ${VLLM_BASE_IMAGE}:${VLLM_BASE_TAG}
 ARG APP_DIR=/workspace/vllm-omni
 WORKDIR ${APP_DIR}
@@ -12,8 +12,8 @@ RUN apt-get update && \
 
 # Install vLLM wheel for the specific commit
 # URL format: https://wheels.vllm.ai/<commit_hash>/
-# Current vLLM commit: 706f123b23b75097da9a3f51ce538bd784fdc75b
-RUN uv pip install --system --upgrade --force-reinstall vllm --extra-index-url https://wheels.vllm.ai/706f123b23b75097da9a3f51ce538bd784fdc75b
+# Current vLLM commit: f176443446f659dbab5315e056e605d8984fd976 (v0.15.0)
+RUN uv pip install --system --upgrade --force-reinstall vllm --extra-index-url https://wheels.vllm.ai/f176443446f659dbab5315e056e605d8984fd976
 
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
 RUN uv pip install --system --no-cache-dir ".[dev]"

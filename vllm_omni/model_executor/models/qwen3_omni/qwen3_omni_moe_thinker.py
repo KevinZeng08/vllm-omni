@@ -609,7 +609,8 @@ class Qwen3OmniMoeConditionalGenerationMixin(Qwen2_5OmniConditionalGenerationMix
             feature_lens=audio_feature_lengths,
             aftercnn_lens=audio_output_lengths,
         )
-        audio_features = audio_outputs.last_hidden_state
+        # OMNI: audio_tower.forward() returns hidden_states tensor directly
+        audio_features = audio_outputs
         return audio_features.split(audio_output_lengths.tolist())
 
 

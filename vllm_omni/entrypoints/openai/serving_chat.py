@@ -362,7 +362,8 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 tokenizer,
                 model_config=model_config,
             )
-        conversation, mm_data_future, mm_uuids = parse_chat_messages_futures(
+        # OMNI: Updated for vLLM v0.15.0 API - resolve_items() returns (mm_data, mm_uuids) tuple
+        conversation, mm_future = parse_chat_messages_futures(
             messages,
             model_config,
             content_format=resolved_content_format,
@@ -409,7 +410,8 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 **hf_chat_template_kwargs,
             )
 
-        mm_data = await mm_data_future
+        # OMNI: Await the combined future to get both mm_data and mm_uuids
+        mm_data, mm_uuids = await mm_future
 
         # tool parsing is done only if a tool_parser has been set and if
         # tool_choice is not "none" (if tool_choice is "none" but a tool_parser
@@ -1677,7 +1679,9 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
     ):
         choices: list[ChatCompletionResponseChoice] = []
         final_res = omni_outputs.request_output
-        audio_data = final_res.multimodal_output.get("audio")
+        # OMNI: Access multimodal_output from CompletionOutput (outputs[0]), not from RequestOutput
+        # Reference: examples/offline_inference/qwen3_omni/end2end.py line 421
+        audio_data = final_res.outputs[0].multimodal_output.get("audio")
         if stream:
             audio_tensor = audio_data[-1].float().detach().cpu().numpy()
         else:
@@ -1763,9 +1767,11 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         if omni_outputs.images:
             images = omni_outputs.images
         # Fall back to request_output for pipeline mode
-        elif final_res is not None:
-            if hasattr(final_res, "multimodal_output") and final_res.multimodal_output:
-                image_data = final_res.multimodal_output.get("image")
+        # OMNI: Access multimodal_output from CompletionOutput (outputs[0]), not from RequestOutput
+        elif final_res is not None and final_res.outputs:
+            completion_output = final_res.outputs[0]
+            if hasattr(completion_output, "multimodal_output") and completion_output.multimodal_output:
+                image_data = completion_output.multimodal_output.get("image")
                 if image_data is not None:
                     if isinstance(image_data, Image.Image):
                         images.append(image_data)

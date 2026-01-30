@@ -4,13 +4,12 @@ from vllm.inputs.parse import (
     ParsedStrPrompt,
     ParsedTextPrompt,
     ParsedTokensPrompt,
+    SingletonPrompt,
 )
-
-from vllm_omni.inputs.data import OmniSingletonPrompt
 
 
 def parse_singleton_prompt_omni(
-    prompt: OmniSingletonPrompt,
+    prompt: SingletonPrompt,
 ) -> ParsedSingletonPrompt:
     """Parse a singleton prompt into a typed parsed prompt.
 
