@@ -471,6 +471,29 @@ class AsyncOmni(OmniBase):
             else:
                 logger.debug(f"[{self._name}] Request {req_id} fully completed")
 
+    def handle_oom(self, result: dict[str, Any], stage: OmniStage, stage_id: int) -> None:
+        if getattr(stage, "stage_type", None) == "diffusion":
+            error_text = str(result.get("error", ""))
+            error_lower = error_text.lower()
+            is_oom = "out of memory" in error_lower or "cuda oom" in error_lower
+            if is_oom:
+                logger.critical(
+                    f"[{self._name}] Diffusion stage {stage_id} reported OOM; stopping stage worker.",
+                )
+                try:
+                    stage.stop_stage_worker()
+                except Exception as e:
+                    logger.warning(
+                        f"[{self._name}] Failed to stop diffusion stage {stage_id}: {e}",
+                    )
+                logger.critical(
+                    f"[{self._name}] Exiting API process due to diffusion stage {stage_id} OOM.",
+                )
+
+                import os as _os
+
+                _os._exit(1)
+
     def _process_single_result(
         self,
         result: dict[str, Any],
@@ -493,6 +516,7 @@ class AsyncOmni(OmniBase):
             logger.error(
                 f"[{self._name}] Stage {stage_id} error on request {req_id}: {result['error']}",
             )
+            self.handle_oom(result, stage, stage_id)  # only temporary workaround for oom
             raise RuntimeError(result)
 
         engine_outputs = _load(result, obj_key="engine_outputs", shm_key="engine_outputs_shm")

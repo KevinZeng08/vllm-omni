@@ -147,17 +147,13 @@ class AsyncOmniDiffusion:
 
         # Run engine in thread pool
         loop = asyncio.get_event_loop()
-        try:
-            # In async mode, only a single request is submitted at a time
-            result = await loop.run_in_executor(
-                self._executor,
-                self.engine.step,
-                request,
-            )
-            result = result[0]
-        except Exception as e:
-            logger.error("Generation failed for request %s: %s", request_id, e)
-            raise RuntimeError(f"Diffusion generation failed: {e}") from e
+        # In async mode, only a single request is submitted at a time
+        result = await loop.run_in_executor(
+            self._executor,
+            self.engine.step,
+            request,
+        )
+        result = result[0]
 
         # Update request_id if needed
         if not result.request_id:
