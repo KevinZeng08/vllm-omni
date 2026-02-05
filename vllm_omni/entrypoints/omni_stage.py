@@ -626,7 +626,6 @@ def _stage_worker(
         for device_id in devices_to_lock:
             lock_file = f"/tmp/vllm_omni_device_{device_id}_init.lock"
             lock_acquired = False
-            next_wait_log = wait_start + 5.0
 
             while not lock_acquired:
                 try:
@@ -654,7 +653,6 @@ def _stage_worker(
                                 device_id,
                             )
                             break
-
 
                         # Wait a bit before retrying
                         _time.sleep(0.1)
@@ -1173,8 +1171,6 @@ async def _stage_worker_async(
         for device_id in devices_to_lock:
             lock_file = f"/tmp/vllm_omni_device_{device_id}_init.lock"
             lock_acquired = False
-            next_wait_log = wait_start + 5.0
-
             while not lock_acquired:
                 try:
                     # Open or create the lock file
@@ -1202,7 +1198,6 @@ async def _stage_worker_async(
                                 stage_init_timeout,
                             )
                             break
-
 
                         # Wait a bit before retrying
                         _time.sleep(0.1)

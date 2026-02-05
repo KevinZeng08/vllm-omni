@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import base64
 import io
+import json
 import multiprocessing
 import multiprocessing.forkserver as forkserver
 import os
