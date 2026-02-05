@@ -281,6 +281,7 @@ class GPUGenerationModelRunner(OmniGPUModelRunner):
             ec_connector_output,
             cudagraph_stats,
             multimodal_outputs,
+            slot_mappings,  # OMNI: pass slot_mappings for upstream v1 API compatibility
         )
         self.kv_connector_output = kv_connector_output
         return None
@@ -322,6 +323,7 @@ class GPUGenerationModelRunner(OmniGPUModelRunner):
             ec_connector_output,
             cudagraph_stats,
             multimodal_outputs,
+            slot_mappings,  # OMNI: unpack slot_mappings for upstream v1 API compatibility
         ) = self.execute_model_state
         self.execute_model_state = None
 
@@ -696,6 +698,7 @@ class GPUGenerationModelRunner(OmniGPUModelRunner):
                     num_tokens,
                     use_cudagraphs=use_cudagraphs,
                     is_graph_capturing=is_graph_capturing,
+                    slot_mappings=slot_mappings,  # OMNI: pass slot_mappings (upstream v1 API)
                 )
 
         # We register layerwise NVTX hooks here after the first dynamo tracing is

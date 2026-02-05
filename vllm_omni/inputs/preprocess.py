@@ -1,12 +1,13 @@
 from typing import Any
 
 from typing_extensions import assert_never
-from vllm.inputs.data import SingletonInputs, SingletonPrompt
+from vllm.inputs.data import EmbedsInputs, SingletonInputs, SingletonPrompt, TextPrompt
 from vllm.inputs.preprocess import InputPreprocessor
 from vllm.logger import init_logger
 from vllm.multimodal.inputs import MultiModalInputs, MultiModalUUIDDict
 
 from vllm_omni.inputs.data import (
+    OmniEmbedsPrompt,
     OmniTextPrompt,
     OmniTokenInputs,
     OmniTokensPrompt,
@@ -101,6 +102,25 @@ class OmniInputPreprocessor(InputPreprocessor):
 
         return inputs
 
+    def _process_embeds(
+        self,
+        parsed_content: OmniEmbedsPrompt,
+    ) -> EmbedsInputs:
+        """Process embeddings prompt with omni-specific extensions.
+
+        Extends base _process_embeds to handle additional_information payload
+        for direct transfer between pipeline stages.
+        """
+        # Call parent implementation for base embeds processing
+        inputs = super()._process_embeds(parsed_content)
+
+        # Add omni-specific additional_information if present
+        additional_information = parsed_content.get("additional_information")
+        if additional_information is not None:
+            inputs["additional_information"] = additional_information  # type: ignore[typeddict-unknown-key]
+
+        return inputs
+
     def _prompt_to_llm_inputs(
         self,
         prompt: SingletonPrompt,
@@ -114,15 +134,17 @@ class OmniInputPreprocessor(InputPreprocessor):
         Arguments:
 
         * prompt: single encoder or decoder input prompt
-        * lora_request: this is only valid for decoder prompts
-        * return_mm_hashes: whether to return multimodal hashes
 
         Returns:
 
-        * Input container compatible with vLLM's singleton prompt handling.
+        * [`SingletonInputs`][vllm.inputs.data.SingletonInputs] instance
         """
         parsed = parse_singleton_prompt_omni(prompt)
 
+        # Note: omni parsing prioritizes tokens path when both tokens and embeds
+        # exist, keeping both for pipeline stage transfer
+        if parsed["type"] == "embeds":
+            return self._process_embeds(parsed["content"])
         if parsed["type"] == "tokens":
             return self._process_tokens(
                 parsed["content"],
@@ -136,7 +158,7 @@ class OmniInputPreprocessor(InputPreprocessor):
             )
         if parsed["type"] == "str":
             return self._process_text(
-                OmniTextPrompt(prompt=parsed["content"]),
+                TextPrompt(prompt=parsed["content"]),
                 tokenization_kwargs=tokenization_kwargs,
                 mm_uuids=mm_uuids,
             )

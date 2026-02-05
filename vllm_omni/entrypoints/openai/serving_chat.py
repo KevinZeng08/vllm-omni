@@ -13,7 +13,7 @@ import torch
 from fastapi import Request
 from PIL import Image
 from pydantic import TypeAdapter
-from vllm.renderers import RendererLike
+from vllm.renderers.protocol import BaseRenderer
 
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniTextPrompt
@@ -77,6 +77,7 @@ from vllm.renderers.mistral import (
 )
 from vllm.sampling_params import SamplingParams
 from vllm.tokenizers import TokenizerLike
+from vllm.tokenizers import TokenizerLike as AnyTokenizer
 from vllm.tokenizers.mistral import (
     MistralTokenizer,
     maybe_serialize_tool_calls,
@@ -85,7 +86,6 @@ from vllm.tokenizers.mistral import (
 )
 from vllm.tool_parsers import ToolParser
 from vllm.tool_parsers.mistral_tool_parser import MistralToolCall
-from vllm.transformers_utils.tokenizer import AnyTokenizer
 from vllm.utils.collection_utils import as_list, is_list_of
 
 from vllm_omni.entrypoints.chat_utils import parse_chat_messages_futures
@@ -231,23 +231,28 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 chat_template_kwargs = request.chat_template_kwargs or {}
                 chat_template_kwargs.update(reasoning_effort=request.reasoning_effort)
 
+                # Merge chat_template_kwargs with defaults
+                merged_template_kwargs = self._prepare_extra_chat_template_kwargs(
+                    chat_template_kwargs,
+                    self.default_chat_template_kwargs,
+                )
                 (
                     conversation,
                     request_prompts,
                     engine_prompts,
                 ) = await self._preprocess_chat(
                     request,
-                    renderer,
                     request.messages,
-                    chat_template=request.chat_template or self.chat_template,
-                    chat_template_content_format=self.chat_template_content_format,
+                    default_template=request.chat_template or self.chat_template,
+                    default_template_content_format=self.chat_template_content_format,
+                    default_template_kwargs=merged_template_kwargs,
+                    tool_dicts=tool_dicts,
+                    tool_parser=tool_parser,
+                    # OMNI: Additional parameters
+                    renderer=renderer,
                     add_generation_prompt=request.add_generation_prompt,
                     continue_final_message=request.continue_final_message,
-                    tool_dicts=tool_dicts,
                     documents=getattr(request, "documents", None),
-                    chat_template_kwargs=chat_template_kwargs,
-                    default_chat_template_kwargs=self.default_chat_template_kwargs,
-                    tool_parser=tool_parser,
                     add_special_tokens=request.add_special_tokens,
                 )
             else:
@@ -329,17 +334,17 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
     async def _preprocess_chat(
         self,
         request: ChatLikeRequest | ResponsesRequest,
-        renderer: RendererLike,
         messages: list[ChatCompletionMessageParam],
-        chat_template: str | None,
-        chat_template_content_format: ChatTemplateContentFormatOption,
+        default_template: str | None,
+        default_template_content_format: ChatTemplateContentFormatOption,
+        default_template_kwargs: dict[str, Any] | None = None,
+        tool_dicts: list[dict[str, Any]] | None = None,
+        tool_parser: Callable[[TokenizerLike], ToolParser] | None = None,
+        # OMNI: Additional parameters for backward compatibility
+        renderer: BaseRenderer | None = None,
         add_generation_prompt: bool = True,
         continue_final_message: bool = False,
-        tool_dicts: list[dict[str, Any]] | None = None,
         documents: list[dict[str, str]] | None = None,
-        chat_template_kwargs: dict[str, Any] | None = None,
-        default_chat_template_kwargs: dict[str, Any] | None = None,
-        tool_parser: Callable[[TokenizerLike], ToolParser] | None = None,
         add_special_tokens: bool = False,
     ) -> tuple[
         list[ConversationMessage],
@@ -347,7 +352,14 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         list[TokensPrompt],
     ]:
         model_config = self.model_config
+        # OMNI: Use self.renderer if renderer not provided (vLLM new API)
+        if renderer is None:
+            renderer = self.renderer
         tokenizer = renderer.get_tokenizer() if renderer is not None else None
+
+        # Map new parameter names to internal variables
+        chat_template = default_template
+        chat_template_content_format = default_template_content_format
 
         if tokenizer is None or isinstance(tokenizer, MistralTokenizer):
             resolved_content_format = (
@@ -369,12 +381,8 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             mm_processor_kwargs=getattr(request, "mm_processor_kwargs", None),
         )
 
-        # Merge default_chat_template_kwargs with request-provided kwargs
-        # Request kwargs take precedence over defaults
-        merged_kwargs = self._prepare_extra_chat_template_kwargs(
-            chat_template_kwargs,
-            default_chat_template_kwargs,
-        )
+        # OMNI: Handle merged kwargs - default_template_kwargs replaces the old two-param system
+        merged_kwargs = default_template_kwargs or {}
 
         _chat_template_kwargs: dict[str, Any] = dict(
             chat_template=chat_template,
@@ -435,12 +443,9 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             )
             prompt_inputs = TokensPrompt(prompt=request_prompt, prompt_token_ids=[1])
         elif isinstance(request_prompt, str):
-            prompt_inputs = await self._tokenize_prompt_input_async(
-                request,
-                tokenizer,
-                request_prompt,
-                add_special_tokens=add_special_tokens,
-            )
+            # OMNI: Direct tokenization using tokenizer (replaces removed _tokenize_prompt_input_async)
+            prompt_token_ids = tokenizer.encode(request_prompt, add_special_tokens=add_special_tokens)
+            prompt_inputs = TokensPrompt(prompt=request_prompt, prompt_token_ids=prompt_token_ids)
         else:
             # For MistralTokenizer
             assert is_list_of(request_prompt, int), "Prompt has to be either a string or a list of token ids"

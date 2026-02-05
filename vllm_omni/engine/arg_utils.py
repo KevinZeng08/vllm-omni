@@ -1,10 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import Qwen3OmniMoeTextConfig
 from vllm.engine.arg_utils import EngineArgs
 from vllm.logger import init_logger
-from vllm.transformers_utils.config import get_hf_text_config
 from vllm.v1.engine.async_llm import AsyncEngineArgs
 
 from vllm_omni.config import OmniModelConfig
@@ -75,24 +73,6 @@ class OmniEngineArgs(EngineArgs):
     async_chunk: bool = False
     omni_kv_config: dict | None = None
 
-    def draw_hf_text_config(self, config_dict: dict) -> Qwen3OmniMoeTextConfig:
-        # transformers' get_text_config method is used to get the text config from thinker_config.
-        # to handle the case that each model stage has their own text config,
-        # we need to draw the text config from the corresponding model stage.
-        hf_config = config_dict["hf_config"]
-        hf_config_name = config_dict["hf_config_name"]
-        try:
-            # Try to get the stage-specific config (e.g., thinker_config, talker_config)
-            stage_config = getattr(hf_config, hf_config_name)
-            return stage_config.get_text_config()
-        except AttributeError:
-            # Fallback: if the attribute doesn't exist, use the default get_hf_text_config
-            logger.warning(
-                f"Config attribute '{hf_config_name}' not found in hf_config, "
-                "falling back to default get_hf_text_config"
-            )
-        return get_hf_text_config(hf_config)
-
     def __post_init__(self) -> None:
         load_omni_general_plugins()
         super().__post_init__()
@@ -112,39 +92,80 @@ class OmniEngineArgs(EngineArgs):
         # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
 
-        # First, get the base ModelConfig from the parent class
-        base_config = super().create_model_config()
-
-        # Create OmniModelConfig by copying all base config attributes
-        # and adding the new omni-specific fields
-        config_dict = base_config.__dict__.copy()
-        # FIXME(Isotr0py): This is a temporary workaround for multimodal_config
-        config_dict = {
-            **(getattr(mm := config_dict.pop("multimodal_config", None), "__dict__", mm or {})),
-            **config_dict,
-        }
-
-        # Add the new omni-specific fields
-        config_dict["stage_id"] = self.stage_id
-        config_dict["async_chunk"] = self.async_chunk
-        config_dict["model_stage"] = self.model_stage
-        config_dict["model_arch"] = self.model_arch
-        config_dict["engine_output_type"] = self.engine_output_type
         # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
             "name": self.stage_connector_spec.get("name", "SharedMemoryConnector"),
             "extra": self.stage_connector_spec.get("extra", {}).copy(),
         }
         stage_connector_config["extra"]["stage_id"] = self.stage_id
-        config_dict["stage_connector_config"] = stage_connector_config
 
-        config_dict["hf_config_name"] = self.hf_config_name
-        config_dict["custom_process_next_stage_input_func"] = self.custom_process_next_stage_input_func
-        config_dict["omni_kv_config"] = self.omni_kv_config
-        if self.hf_config_name is not None:
-            config_dict["hf_text_config"] = self.draw_hf_text_config(config_dict)
-        # Create and return the OmniModelConfig instance
-        omni_config = OmniModelConfig(**config_dict)
+        # Create OmniModelConfig directly from engine args
+        # Note: We pass the actual init parameters matching vLLM's EngineArgs.create_model_config()
+        omni_config = OmniModelConfig(
+            # Base ModelConfig fields (matching vLLM's EngineArgs.create_model_config)
+            model=self.model,
+            model_weights=self.model_weights,
+            hf_config_path=self.hf_config_path,
+            runner=self.runner,
+            convert=self.convert,
+            tokenizer=self.tokenizer,
+            tokenizer_mode=self.tokenizer_mode,
+            trust_remote_code=self.trust_remote_code,
+            allowed_local_media_path=self.allowed_local_media_path,
+            allowed_media_domains=self.allowed_media_domains,
+            dtype=self.dtype,
+            seed=self.seed,
+            revision=self.revision,
+            code_revision=self.code_revision,
+            hf_token=self.hf_token,
+            hf_overrides=self.hf_overrides,
+            tokenizer_revision=self.tokenizer_revision,
+            max_model_len=self.max_model_len,
+            quantization=self.quantization,
+            allow_deprecated_quantization=self.allow_deprecated_quantization,
+            enforce_eager=self.enforce_eager,
+            enable_return_routed_experts=self.enable_return_routed_experts,
+            max_logprobs=self.max_logprobs,
+            logprobs_mode=self.logprobs_mode,
+            disable_sliding_window=self.disable_sliding_window,
+            disable_cascade_attn=self.disable_cascade_attn,
+            skip_tokenizer_init=self.skip_tokenizer_init,
+            enable_prompt_embeds=self.enable_prompt_embeds,
+            served_model_name=self.served_model_name,
+            limit_mm_per_prompt=self.limit_mm_per_prompt,
+            enable_mm_embeds=self.enable_mm_embeds,
+            interleave_mm_strings=self.interleave_mm_strings,
+            media_io_kwargs=self.media_io_kwargs,
+            skip_mm_profiling=self.skip_mm_profiling,
+            config_format=self.config_format,
+            mm_processor_kwargs=self.mm_processor_kwargs,
+            mm_processor_cache_gb=self.mm_processor_cache_gb,
+            mm_processor_cache_type=self.mm_processor_cache_type,
+            mm_shm_cache_max_object_size_mb=self.mm_shm_cache_max_object_size_mb,
+            mm_encoder_only=self.mm_encoder_only,
+            mm_encoder_tp_mode=self.mm_encoder_tp_mode,
+            mm_encoder_attn_backend=self.mm_encoder_attn_backend,
+            pooler_config=self.pooler_config,
+            logits_processor_pattern=self.logits_processor_pattern,
+            generation_config=self.generation_config,
+            override_generation_config=self.override_generation_config,
+            enable_sleep_mode=self.enable_sleep_mode,
+            model_impl=self.model_impl,
+            override_attention_dtype=self.override_attention_dtype,
+            logits_processors=self.logits_processors,
+            video_pruning_rate=self.video_pruning_rate,
+            io_processor_plugin=self.io_processor_plugin,
+            # Omni-specific fields
+            stage_id=self.stage_id,
+            async_chunk=self.async_chunk,
+            model_stage=self.model_stage,
+            model_arch=self.model_arch,
+            engine_output_type=self.engine_output_type,
+            hf_config_name=self.hf_config_name,
+            custom_process_next_stage_input_func=self.custom_process_next_stage_input_func,
+            stage_connector_config=stage_connector_config,
+            omni_kv_config=self.omni_kv_config,
+        )
         omni_config.hf_config.architectures = omni_config.architectures
 
         return omni_config
@@ -177,24 +198,6 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
     async_chunk: bool = False
     omni_kv_config: dict | None = None
 
-    def draw_hf_text_config(self, config_dict: dict) -> Qwen3OmniMoeTextConfig:
-        # transformers' get_text_config method is used to get the text config from thinker_config.
-        # to handle the case that each model stage has their own text config,
-        # we need to draw the text config from the corresponding model stage.
-        hf_config = config_dict["hf_config"]
-        hf_config_name = config_dict["hf_config_name"]
-        try:
-            # Try to get the stage-specific config (e.g., thinker_config, talker_config)
-            stage_config = getattr(hf_config, hf_config_name)
-            return stage_config.get_text_config()
-        except AttributeError:
-            # Fallback: if the attribute doesn't exist, use the default get_hf_text_config
-            logger.warning(
-                f"Config attribute '{hf_config_name}' not found in hf_config, "
-                "falling back to default get_hf_text_config"
-            )
-        return get_hf_text_config(hf_config)
-
     def __post_init__(self) -> None:
         load_omni_general_plugins()
         super().__post_init__()
@@ -207,35 +210,87 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
         return True
 
     def create_model_config(self) -> OmniModelConfig:
+        """Create an OmniModelConfig from these engine arguments.
+        Returns:
+            OmniModelConfig instance with all configuration fields set
+        """
         # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
-        # First, get the base ModelConfig from the parent class
-        base_config = super().create_model_config()
 
-        # Create OmniModelConfig by copying all base config attributes
-        # and adding the new omni-specific fields
-        config_dict = base_config.__dict__.copy()
-
-        # Add the new omni-specific fields
-        config_dict["stage_id"] = self.stage_id
-        config_dict["async_chunk"] = self.async_chunk
-        config_dict["model_stage"] = self.model_stage
-        config_dict["model_arch"] = self.model_arch
-        config_dict["engine_output_type"] = self.engine_output_type
+        # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
             "name": self.stage_connector_spec.get("name", "SharedMemoryConnector"),
             "extra": self.stage_connector_spec.get("extra", {}).copy(),
         }
         stage_connector_config["extra"]["stage_id"] = self.stage_id
-        config_dict["stage_connector_config"] = stage_connector_config
 
-        config_dict["hf_config_name"] = self.hf_config_name
-        config_dict["custom_process_next_stage_input_func"] = self.custom_process_next_stage_input_func
-        config_dict["omni_kv_config"] = self.omni_kv_config
-        if self.hf_config_name is not None:
-            config_dict["hf_text_config"] = self.draw_hf_text_config(config_dict)
-        # Create and return the OmniModelConfig instance
-        omni_config = OmniModelConfig(**config_dict)
+        # Create OmniModelConfig directly from engine args
+        # Note: We pass the actual init parameters matching vLLM's EngineArgs.create_model_config()
+        omni_config = OmniModelConfig(
+            # Base ModelConfig fields (matching vLLM's EngineArgs.create_model_config)
+            model=self.model,
+            model_weights=self.model_weights,
+            hf_config_path=self.hf_config_path,
+            runner=self.runner,
+            convert=self.convert,
+            tokenizer=self.tokenizer,
+            tokenizer_mode=self.tokenizer_mode,
+            trust_remote_code=self.trust_remote_code,
+            allowed_local_media_path=self.allowed_local_media_path,
+            allowed_media_domains=self.allowed_media_domains,
+            dtype=self.dtype,
+            seed=self.seed,
+            revision=self.revision,
+            code_revision=self.code_revision,
+            hf_token=self.hf_token,
+            hf_overrides=self.hf_overrides,
+            tokenizer_revision=self.tokenizer_revision,
+            max_model_len=self.max_model_len,
+            quantization=self.quantization,
+            allow_deprecated_quantization=self.allow_deprecated_quantization,
+            enforce_eager=self.enforce_eager,
+            enable_return_routed_experts=self.enable_return_routed_experts,
+            max_logprobs=self.max_logprobs,
+            logprobs_mode=self.logprobs_mode,
+            disable_sliding_window=self.disable_sliding_window,
+            disable_cascade_attn=self.disable_cascade_attn,
+            skip_tokenizer_init=self.skip_tokenizer_init,
+            enable_prompt_embeds=self.enable_prompt_embeds,
+            served_model_name=self.served_model_name,
+            limit_mm_per_prompt=self.limit_mm_per_prompt,
+            enable_mm_embeds=self.enable_mm_embeds,
+            interleave_mm_strings=self.interleave_mm_strings,
+            media_io_kwargs=self.media_io_kwargs,
+            skip_mm_profiling=self.skip_mm_profiling,
+            config_format=self.config_format,
+            mm_processor_kwargs=self.mm_processor_kwargs,
+            mm_processor_cache_gb=self.mm_processor_cache_gb,
+            mm_processor_cache_type=self.mm_processor_cache_type,
+            mm_shm_cache_max_object_size_mb=self.mm_shm_cache_max_object_size_mb,
+            mm_encoder_only=self.mm_encoder_only,
+            mm_encoder_tp_mode=self.mm_encoder_tp_mode,
+            mm_encoder_attn_backend=self.mm_encoder_attn_backend,
+            pooler_config=self.pooler_config,
+            logits_processor_pattern=self.logits_processor_pattern,
+            generation_config=self.generation_config,
+            override_generation_config=self.override_generation_config,
+            enable_sleep_mode=self.enable_sleep_mode,
+            model_impl=self.model_impl,
+            override_attention_dtype=self.override_attention_dtype,
+            logits_processors=self.logits_processors,
+            video_pruning_rate=self.video_pruning_rate,
+            io_processor_plugin=self.io_processor_plugin,
+            # Omni-specific fields
+            stage_id=self.stage_id,
+            async_chunk=self.async_chunk,
+            model_stage=self.model_stage,
+            model_arch=self.model_arch,
+            engine_output_type=self.engine_output_type,
+            hf_config_name=self.hf_config_name,
+            custom_process_next_stage_input_func=self.custom_process_next_stage_input_func,
+            stage_connector_config=stage_connector_config,
+            omni_kv_config=self.omni_kv_config,
+        )
         omni_config.hf_config.architectures = omni_config.architectures
 
         return omni_config

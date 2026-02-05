@@ -1,4 +1,3 @@
-import os
 import time
 from collections.abc import Mapping
 from typing import Any, cast
@@ -169,14 +168,7 @@ class OmniInputProcessor(InputProcessor):
         # 1. Tokenize text prompt, with LoRA request if one exists.
         # 2. For multimodal models with a merged preprocessor, preprocess
         #   multimodal data and expand prompt token ids accordingly.
-        num_threads = int(os.environ.get("OMP_NUM_THREADS", "1"))
-        if "OMP_NUM_THREADS" not in os.environ:
-            logger.debug_once(
-                "OMP_NUM_THREADS is not set; defaulting Torch threads to %d for input preprocessing.",
-                num_threads,
-            )
-
-        with set_request_id(request_id), set_default_torch_num_threads(num_threads):
+        with set_request_id(request_id), set_default_torch_num_threads():
             processed_inputs: ProcessorInputs = self.input_preprocessor.preprocess(
                 prompt,
                 tokenization_kwargs=tokenization_kwargs,

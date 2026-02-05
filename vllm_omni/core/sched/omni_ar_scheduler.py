@@ -351,6 +351,7 @@ class OmniARScheduler(VLLMScheduler):
                         kv_transfer_params=kv_transfer_params,
                         trace_headers=request.trace_headers,
                         num_cached_tokens=request.num_cached_tokens,
+                        num_external_computed_tokens=request.num_external_computed_tokens,
                         routed_experts=routed_experts,
                         num_nans_in_logits=request.num_nans_in_logits,
                     )
@@ -418,7 +419,7 @@ class OmniARScheduler(VLLMScheduler):
 
         # publish collected KV cache events
         if events:
-            batch = KVEventBatch(ts=time.time(), events=events)
+            batch = KVEventBatch(ts=time(), events=events)
             self.kv_event_publisher.publish(batch)
 
         # Create EngineCoreOutputs for all clients that have requests with

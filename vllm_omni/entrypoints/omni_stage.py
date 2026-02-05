@@ -626,6 +626,7 @@ def _stage_worker(
         for device_id in devices_to_lock:
             lock_file = f"/tmp/vllm_omni_device_{device_id}_init.lock"
             lock_acquired = False
+            next_wait_log = wait_start + 5.0
 
             while not lock_acquired:
                 try:
@@ -653,6 +654,7 @@ def _stage_worker(
                                 device_id,
                             )
                             break
+
 
                         # Wait a bit before retrying
                         _time.sleep(0.1)
@@ -1171,6 +1173,7 @@ async def _stage_worker_async(
         for device_id in devices_to_lock:
             lock_file = f"/tmp/vllm_omni_device_{device_id}_init.lock"
             lock_acquired = False
+            next_wait_log = wait_start + 5.0
 
             while not lock_acquired:
                 try:
@@ -1199,6 +1202,7 @@ async def _stage_worker_async(
                                 stage_init_timeout,
                             )
                             break
+
 
                         # Wait a bit before retrying
                         _time.sleep(0.1)
@@ -1234,6 +1238,8 @@ async def _stage_worker_async(
             break
         engine_args["stage_connector_spec"] = stage_connector_spec
         engine_args["stage_id"] = stage_id
+    stage_engine = None
+    engine_init_error = None
     try:
         if stage_type == "diffusion":
             # For diffusion, we need to extract diffusion-specific config
@@ -1261,6 +1267,9 @@ async def _stage_worker_async(
                 usage_context=usage_context,
                 engine_args=omni_engine_args,
             )
+    except Exception as e:
+        engine_init_error = e
+        logger.exception("[Stage-%s] Engine initialization failed: %s", stage_id, e)
     finally:
         # Release all locks by closing file descriptors
         # Locks are automatically released when file descriptors are closed
@@ -1272,6 +1281,11 @@ async def _stage_worker_async(
                 logger.debug("Released initialization lock (fd=%s)", lock_fd)
             except (OSError, ValueError):
                 pass
+    # If engine init failed, re-raise the exception
+    if engine_init_error is not None:
+        raise engine_init_error
+    if stage_engine is None:
+        raise RuntimeError(f"[Stage-{stage_id}] Engine was not initialized")
     omni_stage.set_async_engine(stage_engine)
     if hasattr(omni_stage.async_engine, "log_stats") and omni_stage.async_engine.log_stats:
 

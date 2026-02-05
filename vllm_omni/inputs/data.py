@@ -3,7 +3,8 @@ import pprint
 from dataclasses import asdict, dataclass, field
 from typing import Any, TypeAlias
 
-from vllm import PromptType, SamplingParams
+from vllm.inputs import PromptType
+from vllm.sampling_params import SamplingParams
 
 from vllm_omni.lora.request import LoRARequest
 
