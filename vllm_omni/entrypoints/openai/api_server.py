@@ -53,8 +53,8 @@ from vllm.entrypoints.openai.models.protocol import BaseModelPath
 from vllm.entrypoints.openai.models.serving import OpenAIServingModels
 from vllm.entrypoints.openai.orca_metrics import metrics_header
 from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
-from vllm.entrypoints.openai.server_utils import load_log_config
-from vllm.entrypoints.openai.translations.serving import (
+from vllm.entrypoints.openai.server_utils import get_uvicorn_log_config
+from vllm.entrypoints.openai.speech_to_text.serving import (
     OpenAIServingTranscription,
     OpenAIServingTranslation,
 )
@@ -191,7 +191,7 @@ async def omni_run_server_worker(listen_address, sock, args, client_config=None,
         ReasoningParserManager.import_reasoning_parser(args.reasoning_parser_plugin)
 
     # Load logging config for uvicorn if specified
-    log_config = load_log_config(getattr(args, "log_config_file", None))
+    log_config = get_uvicorn_log_config(args)
     if log_config is not None:
         uvicorn_kwargs["log_config"] = log_config
 

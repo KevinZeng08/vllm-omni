@@ -65,6 +65,15 @@ class OmniModelConfig(ModelConfig):
     def architectures(self) -> list[str]:
         return [self.model_arch]
 
+    @property
+    def embedding_size(self):
+        if self.hf_config_name is not None:
+            stage_config = getattr(self.hf_config, self.hf_config_name, None)
+            override = getattr(stage_config, "embedding_size", None)
+            if override is not None:
+                return override
+        return super().embedding_size
+
     def draw_hf_text_config(self):
         # transformers' get_text_config method is used to get the text config from thinker_config.
         # to handle the case that each model stage has their own text config,

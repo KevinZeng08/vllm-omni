@@ -11,6 +11,7 @@ from vllm.model_executor.layers.rotary_embedding import MRotaryEmbedding
 from vllm.model_executor.models.interfaces import supports_mrope
 from vllm.model_executor.models.interfaces_base import VllmModelForPooling
 from vllm.sampling_params import SamplingType
+from vllm.tracing import instrument
 from vllm.utils.import_utils import LazyLoader
 from vllm.utils.math_utils import cdiv
 from vllm.v1.spec_decode.eagle import EagleProposer
@@ -40,6 +41,7 @@ class OmniGPUModelRunner(GPUModelRunner):
         self._omni_num_scheduled_tokens_np: np.ndarray | None = None
         self._omni_last_model_output: object | None = None
 
+    @instrument(span_name="Loading (GPU)")
     def load_model(self, *args, **kwargs) -> None:
         super().load_model(*args, **kwargs)
         # TODO move this model specific logic to a separate class

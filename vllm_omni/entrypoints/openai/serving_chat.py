@@ -3,7 +3,7 @@ import base64
 import json
 import time
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Final, Optional, cast
@@ -66,12 +66,14 @@ from vllm.entrypoints.utils import should_include_usage
 from vllm.inputs.data import PromptType, TokensPrompt
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
+from vllm.reasoning import ReasoningParser
 from vllm.renderers.hf import (
     resolve_chat_template_content_format,
 )
 from vllm.renderers.hf import (
     safe_apply_chat_template as apply_hf_chat_template,
 )
+from vllm.renderers.inputs import TokPrompt
 from vllm.renderers.mistral import (
     safe_apply_chat_template as apply_mistral_chat_template,
 )
@@ -182,6 +184,17 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             if tokenizer is None:
                 tokenizer = await self.engine_client.get_tokenizer()
 
+            reasoning_parser: ReasoningParser | None = None
+            if self.reasoning_parser_cls:
+                chat_template_kwargs = self._prepare_extra_chat_template_kwargs(
+                    request.chat_template_kwargs,
+                    self.default_chat_template_kwargs,
+                )
+                reasoning_parser = self.reasoning_parser_cls(
+                    tokenizer,
+                    chat_template_kwargs=chat_template_kwargs,  # type: ignore[call-arg]
+                )
+
             tool_parser = self.tool_parser
 
             if isinstance(tokenizer, MistralTokenizer):
@@ -236,11 +249,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                     chat_template_kwargs,
                     self.default_chat_template_kwargs,
                 )
-                (
-                    conversation,
-                    request_prompts,
-                    engine_prompts,
-                ) = await self._preprocess_chat(
+                conversation, engine_prompts = await self._preprocess_chat(
                     request,
                     request.messages,
                     default_template=request.chat_template or self.chat_template,
@@ -258,7 +267,6 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             else:
                 should_include_tools = tool_dicts is not None
                 conversation, engine_prompts = self._make_request_with_harmony(request, should_include_tools)
-                request_prompts = [engine_prompt.get("prompt_token_ids", []) for engine_prompt in engine_prompts]
 
         except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
             logger.exception("Error in preprocessing prompt inputs")
@@ -287,7 +295,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
 
                 self._log_inputs(
                     request_id,
-                    request_prompts[i],
+                    engine_prompt,
                     params_list=sampling_params_list,
                     lora_request=lora_request,
                 )
@@ -316,6 +324,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 conversation,
                 tokenizer,
                 request_metadata,
+                reasoning_parser,
             )
 
         try:
@@ -327,6 +336,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 conversation,
                 tokenizer,
                 request_metadata,
+                reasoning_parser,
             )
         except ValueError as e:
             return self.create_error_response(e)
@@ -346,11 +356,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         continue_final_message: bool = False,
         documents: list[dict[str, str]] | None = None,
         add_special_tokens: bool = False,
-    ) -> tuple[
-        list[ConversationMessage],
-        Sequence[PromptType],
-        list[TokensPrompt],
-    ]:
+    ) -> tuple[list[ConversationMessage], list[TokPrompt]]:
         model_config = self.model_config
         # OMNI: Use self.renderer if renderer not provided (vLLM new API)
         if renderer is None:
@@ -468,7 +474,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         if hasattr(request, "cache_salt") and request.cache_salt is not None:
             engine_prompt["cache_salt"] = request.cache_salt
 
-        return conversation, [request_prompt], [engine_prompt]
+        return conversation, [engine_prompt]
 
     def _to_sampling_params_list(self, sampling_params_list: list[dict]) -> list[SamplingParams]:
         final_sampling_params_list = []
@@ -564,20 +570,16 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
     def _log_inputs(
         self,
         request_id: str,
-        inputs: PromptType,
+        inputs: PromptType | TokPrompt,
         params_list: list[SamplingParams] | None,
         lora_request: LoRARequest | None,
     ) -> None:
         if self.request_logger is None:
             return
-        prompt, prompt_token_ids, prompt_embeds = None, None, None
-        if isinstance(inputs, str):
-            prompt = inputs
-        elif isinstance(inputs, list):
-            prompt_token_ids = inputs
-        else:
-            prompt = getattr(inputs, "prompt", None)
-            prompt_token_ids = getattr(inputs, "prompt_token_ids", None)
+        components = self._extract_prompt_components(inputs)
+        prompt = components.text
+        prompt_token_ids = components.token_ids
+        prompt_embeds = components.embeds
 
         logger.info(
             "Received request %s: prompt: %r, params_list: %s, prompt_token_ids: %s, prompt_embeds shape: %s, lora_request: %s.",  # noqa: E501
@@ -598,6 +600,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         conversation: list[ConversationMessage],
         tokenizer: AnyTokenizer,
         request_metadata: RequestResponseMetadata,
+        reasoning_parser: ReasoningParser | None = None,
     ):
         created_time = int(time.time())
         chunk_object_type: Final = "chat.completion.chunk"
@@ -639,7 +642,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
 
         # Only one of these will be used, thus previous_texts and
         # all_previous_token_ids will not be used twice in the same iteration.
-        if tool_choice_auto or self.reasoning_parser:
+        if tool_choice_auto or reasoning_parser:
             # These are only required in "auto" tool choice case
             all_previous_token_ids = [[]] * num_choices
             # For reasoning parser and tool call all enabled
@@ -647,23 +650,6 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             reasoning_end_arr = [False] * num_choices
         else:
             all_previous_token_ids = None
-
-        try:
-            if self.reasoning_parser:
-                chat_template_kwargs = self._prepare_extra_chat_template_kwargs(
-                    request.chat_template_kwargs,
-                    self.default_chat_template_kwargs,
-                )
-                reasoning_parser = self.reasoning_parser(
-                    tokenizer,
-                    chat_template_kwargs=chat_template_kwargs,  # type: ignore
-                )
-        except RuntimeError as e:
-            logger.exception("Error in reasoning parser creation.")
-            data = self.create_streaming_error_response(e)
-            yield f"data: {data}\n\n"
-            yield "data: [DONE]\n\n"
-            return
         # Prepare the tool parser if it's needed
         try:
             if tool_choice_auto and self.tool_parser:
@@ -815,7 +801,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                         delta_message: DeltaMessage | None
 
                         # just update previous_texts and previous_token_ids
-                        if tool_choice_auto or self.reasoning_parser:
+                        if tool_choice_auto or reasoning_parser:
                             assert previous_texts is not None
                             assert all_previous_token_ids is not None
                             previous_text = previous_texts[i]
@@ -882,7 +868,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                         # handle streaming deltas for tools with named tool_choice
                         elif tool_choice_function_name:
                             if (
-                                self.reasoning_parser
+                                reasoning_parser
                                 and not reasoning_end_arr[i]
                                 and not reasoning_parser.is_reasoning_end(previous_token_ids)
                             ):
@@ -912,7 +898,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                                         current_text = ""
                             else:
                                 # Just to add remaining `content`
-                                if self.reasoning_parser:
+                                if reasoning_parser:
                                     delta_text = previous_text + delta_text
                                     current_text = ""
 
@@ -948,14 +934,14 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                             output_token_ids = as_list(output.token_ids)
 
                             if (
-                                self.reasoning_parser is not None
+                                reasoning_parser is not None
                                 and not reasoning_end_arr[i]
                                 and res.prompt_token_ids
                                 and reasoning_parser.is_reasoning_end(res.prompt_token_ids)
                             ):
                                 reasoning_end_arr[i] = True
 
-                            if self.reasoning_parser and not reasoning_end_arr[i]:
+                            if reasoning_parser and not reasoning_end_arr[i]:
                                 delta_message = reasoning_parser.extract_reasoning_streaming(
                                     previous_text,
                                     current_text,
@@ -994,7 +980,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
 
                         # handle streaming deltas for tools with "auto" tool choice
                         # and reasoning parser
-                        elif tool_choice_auto and self.reasoning_parser:
+                        elif tool_choice_auto and reasoning_parser:
                             assert tool_parser is not None
                             assert reasoning_parser is not None
                             assert added_content_delta_arr is not None
@@ -1075,7 +1061,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                                 tools_streamed[i] = True
 
                         # when only reasoning
-                        elif self.reasoning_parser:
+                        elif reasoning_parser:
                             delta_message = reasoning_parser.extract_reasoning_streaming(
                                 previous_text,
                                 current_text,
@@ -1089,7 +1075,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                             delta_message = DeltaMessage(content=delta_text)
 
                         # update the previous values for the next iteration
-                        if (tool_choice_auto or self.reasoning_parser) and not self.use_harmony:
+                        if (tool_choice_auto or reasoning_parser) and not self.use_harmony:
                             assert previous_texts is not None
                             assert all_previous_token_ids is not None
                             previous_texts[i] = current_text
@@ -1327,6 +1313,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         conversation: list[ConversationMessage],
         tokenizer: TokenizerLike,
         request_metadata: RequestResponseMetadata,
+        reasoning_parser: ReasoningParser | None = None,
     ) -> ErrorResponse | ChatCompletionResponse:
         created_time = int(time.time())
         final_res: RequestOutput | None = None
@@ -1372,7 +1359,14 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                     prompt_logprobs,
                     prompt_token_ids,
                     kv_transfer_params,
-                ) = self._create_text_choice(request, omni_outputs, tokenizer, conversation, role)
+                ) = self._create_text_choice(
+                    request,
+                    omni_outputs,
+                    tokenizer,
+                    conversation,
+                    role,
+                    reasoning_parser,
+                )
             elif omni_outputs.final_output_type == "audio":
                 choices_data = self._create_audio_choice(omni_outputs, role, request, stream=False)
             elif omni_outputs.final_output_type == "image":
@@ -1432,6 +1426,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         tokenizer: TokenizerLike,
         conversation: list[ConversationMessage],
         role: str,
+        reasoning_parser: ReasoningParser | None = None,
     ):
         final_res = omni_outputs.request_output
         if self.tool_call_id_type == "kimi_k2":
@@ -1499,19 +1494,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 choices.append(choice_data)
                 continue
 
-            if self.reasoning_parser:
-                try:
-                    chat_template_kwargs = self._prepare_extra_chat_template_kwargs(
-                        request.chat_template_kwargs,
-                        self.default_chat_template_kwargs,
-                    )
-                    reasoning_parser = self.reasoning_parser(
-                        tokenizer,
-                        chat_template_kwargs=chat_template_kwargs,  # type: ignore
-                    )
-                except RuntimeError as e:
-                    logger.exception("Error in reasoning parser creation.")
-                    return self.create_error_response(e)
+            if reasoning_parser:
                 # If the reasoning parser is enabled,
                 # tool calls are extracted exclusively from the content.
                 reasoning_content, content = reasoning_parser.extract_reasoning(output.text, request=request)

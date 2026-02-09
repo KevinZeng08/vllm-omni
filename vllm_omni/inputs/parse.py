@@ -1,11 +1,29 @@
-from vllm.inputs.parse import (
-    ParsedEmbedsPrompt,
-    ParsedSingletonPrompt,
-    ParsedStrPrompt,
-    ParsedTextPrompt,
-    ParsedTokensPrompt,
-    SingletonPrompt,
-)
+from typing import Literal, TypedDict
+
+from vllm.inputs import EmbedsPrompt, SingletonPrompt, TextPrompt, TokensPrompt
+
+
+class ParsedStrPrompt(TypedDict):
+    type: Literal["str"]
+    content: str
+
+
+class ParsedTextPrompt(TypedDict):
+    type: Literal["text"]
+    content: TextPrompt
+
+
+class ParsedTokensPrompt(TypedDict):
+    type: Literal["tokens"]
+    content: TokensPrompt
+
+
+class ParsedEmbedsPrompt(TypedDict):
+    type: Literal["embeds"]
+    content: EmbedsPrompt
+
+
+ParsedSingletonPrompt = ParsedStrPrompt | ParsedTextPrompt | ParsedTokensPrompt | ParsedEmbedsPrompt
 
 
 def parse_singleton_prompt_omni(
@@ -29,16 +47,21 @@ def parse_singleton_prompt_omni(
         TypeError: If the prompt type is not supported
     """
     if isinstance(prompt, str):
-        return ParsedStrPrompt(type="str", content=prompt)
-    elif isinstance(prompt, dict):
-        # Type ignores are because mypy does not correctly infer the TypedDicts
-        # Pyright does succeed.
+        return {"type": "str", "content": prompt}
+    if isinstance(prompt, list):
+        if not all(isinstance(token, int) for token in prompt):
+            raise TypeError("Token prompt should be a list of integers")
+        return {
+            "type": "tokens",
+            "content": TokensPrompt(prompt_token_ids=prompt),
+        }
+    if isinstance(prompt, dict):
         # Priority tokens: When both tokens and embeds exist, keep both and
-        # follow the tokens path
+        # follow the tokens path.
         if "prompt_token_ids" in prompt:
-            return ParsedTokensPrompt(type="tokens", content=prompt)  # type: ignore[typeddict-item]
-        elif "prompt_embeds" in prompt:
-            return ParsedEmbedsPrompt(type="embeds", content=prompt)  # type: ignore[typeddict-item]
-        elif "prompt" in prompt:
-            return ParsedTextPrompt(type="text", content=prompt)
-    raise TypeError("inputs must be a string, TextPrompt, TokensPrompt, or EmbedsPrompt")
+            return {"type": "tokens", "content": prompt}
+        if "prompt_embeds" in prompt:
+            return {"type": "embeds", "content": prompt}
+        if "prompt" in prompt:
+            return {"type": "text", "content": prompt}
+    raise TypeError("inputs must be a string, list of token IDs, TextPrompt, TokensPrompt, or EmbedsPrompt")

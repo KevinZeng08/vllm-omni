@@ -735,55 +735,46 @@ class GPUGenerationModelRunner(OmniGPUModelRunner):
                 assert mm_budget is not None
 
                 if (encoder_budget := mm_budget.get_encoder_budget()) > 0:
-                    # NOTE: Currently model is profiled with a single non-text
-                    # modality with the max possible input tokens even when
-                    # it supports multiple.
-                    dummy_modality = mm_budget.get_modality_with_max_tokens()
-                    max_mm_items_per_batch = mm_budget.max_items_per_batch_by_modality[dummy_modality]
+                    if not mm_budget.mm_max_toks_per_item:
+                        # All modality limits are 0 — embedding-only mode.
+                        # Budget is non-zero for embedding storage, but
+                        # there's no encoder to profile.
+                        logger.info(
+                            "Skipping encoder profiling for embedding-only "
+                            "mode (all modality limits=0 with "
+                            "enable_mm_embeds=True).",
+                        )
+                    else:
+                        # NOTE: Currently model is profiled with a single non-text
+                        # modality with the max possible input tokens even when
+                        # it supports multiple.
+                        dummy_modality = mm_budget.get_modality_with_max_tokens()
+                        max_mm_items_per_batch = mm_budget.mm_max_items_per_batch[dummy_modality]
 
-                    logger.info(
-                        "Encoder cache will be initialized with a budget of "
-                        "%s tokens, and profiled with %s %s items of the "
-                        "maximum feature size.",
-                        encoder_budget,
-                        max_mm_items_per_batch,
-                        dummy_modality,
-                    )
+                        logger.info(
+                            "Encoder cache will be initialized with a budget of "
+                            "%s tokens, and profiled with %s %s items of the "
+                            "maximum feature size.",
+                            encoder_budget,
+                            max_mm_items_per_batch,
+                            dummy_modality,
+                        )
 
-                    # Create dummy batch of multimodal inputs.
-                    batched_dummy_mm_inputs = self._get_mm_dummy_batch(
-                        dummy_modality,
-                        max_mm_items_per_batch,
-                    )
+                        # Create dummy batch of multimodal inputs.
+                        batched_dummy_mm_inputs = self._get_mm_dummy_batch(
+                            dummy_modality,
+                            max_mm_items_per_batch,
+                        )
 
-                    # Run multimodal encoder.
-                    dummy_encoder_outputs = self.model.embed_multimodal(**batched_dummy_mm_inputs)
+                        # Run multimodal encoder.
+                        dummy_encoder_outputs = self.model.embed_multimodal(**batched_dummy_mm_inputs)
 
-                    sanity_check_mm_encoder_outputs(
-                        dummy_encoder_outputs,
-                        expected_num_items=max_mm_items_per_batch,
-                    )
-
-                    # NOTE: This happens when encoder cache needs to store
-                    # the embeddings that encoder outputs are scattered onto.
-                    # In this case we create dummy embeddings of size
-                    # (max_tokens_for_modality, hidden_size) and scatter
-                    # encoder output into it.
-                    encoder_output_shape = dummy_encoder_outputs[0].shape
-                    max_mm_tokens_per_item = mm_budget.max_tokens_by_modality[dummy_modality]
-                    if encoder_output_shape[0] < max_mm_tokens_per_item:
-                        encoder_hidden_size = encoder_output_shape[-1]
-                        expanded_outputs = []
-                        for output in dummy_encoder_outputs:
-                            expanded = output.new_zeros((max_mm_tokens_per_item, encoder_hidden_size))
-                            num_tokens = output.shape[0]
-                            expanded[:num_tokens].copy_(output)
-                            expanded_outputs.append(expanded)
-
-                        dummy_encoder_outputs = expanded_outputs
-
-                    # Cache the dummy encoder outputs.
-                    self.encoder_cache["tmp"] = dict(enumerate(dummy_encoder_outputs))
+                        sanity_check_mm_encoder_outputs(
+                            dummy_encoder_outputs,
+                            expected_num_items=max_mm_items_per_batch,
+                        )
+                        for i, output in enumerate(dummy_encoder_outputs):
+                            self.encoder_cache[f"tmp_{i}"] = output
 
         # Add `is_profile` here to pre-allocate communication buffers
         hidden_states, _ = self._dummy_run(self.max_num_tokens, is_profile=True)
