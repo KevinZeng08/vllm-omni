@@ -23,8 +23,8 @@ RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm 
 # Keep flashinfer runtime packages in version sync.
 # We derive the version from installed flashinfer-python (pulled by vllm)
 # and enforce the same version for flashinfer-cubin / flashinfer-jit-cache.
-RUN FLASHINFER_VERSION="$(python3 -c 'import importlib.metadata as m; print(m.version(\"flashinfer-python\"))')" && \
-    FLASHINFER_CUDA_TAG="$(python3 -c 'import torch; print((torch.version.cuda or \"12.4\").replace(\".\", \"\"))')" && \
+RUN FLASHINFER_VERSION="$(python3 -c 'import importlib.metadata as m; print(m.version("flashinfer-python"))')" && \
+    FLASHINFER_CUDA_TAG="$(python3 -c 'import torch; print((torch.version.cuda or "12.4").replace(".", ""))')" && \
     uv pip install --system --upgrade --force-reinstall \
       "flashinfer-cubin==${FLASHINFER_VERSION}" \
       "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
