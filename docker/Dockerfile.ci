@@ -20,19 +20,28 @@ RUN apt-get update && \
 # causing it to fall back to the older stable release from PyPI.
 RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm --extra-index-url https://wheels.vllm.ai/4a1550d22d7058e129d0e1257e726b3bf4a77025
 
-# Keep flashinfer runtime packages in version sync.
-# We derive the version from installed flashinfer (pulled by vllm)
-# and enforce the same version for flashinfer-cubin / flashinfer-jit-cache.
-RUN FLASHINFER_VERSION="$(python3 -c 'import importlib.metadata as m; print(m.version("flashinfer-python"))' 2>/dev/null || python3 -c 'import importlib.metadata as m; print(m.version("flashinfer"))')" && \
-    FLASHINFER_CUDA_TAG="$(python3 -c 'import torch; print((torch.version.cuda or "12.4").replace(".", ""))')" && \
-    uv pip install --system --upgrade --force-reinstall \
-      "flashinfer-cubin==${FLASHINFER_VERSION}" \
-      "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
-      --extra-index-url "https://flashinfer.ai/whl/cu${FLASHINFER_CUDA_TAG}" && \
-    flashinfer show-config
+# # Keep flashinfer runtime packages in version sync.
+# # We derive the version from installed flashinfer (pulled by vllm)
+# # and enforce the same version for flashinfer-cubin / flashinfer-jit-cache.
+# RUN FLASHINFER_VERSION="$(python3 -c 'import importlib.metadata as m; print(m.version("flashinfer-python"))' 2>/dev/null || python3 -c 'import importlib.metadata as m; print(m.version("flashinfer"))')" && \
+#     FLASHINFER_CUDA_TAG="$(python3 -c 'import torch; print((torch.version.cuda or "12.4").replace(".", ""))')" && \
+#     uv pip install --system --upgrade --force-reinstall \
+#       "flashinfer-cubin==${FLASHINFER_VERSION}" \
+#       "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
+#       --extra-index-url "https://flashinfer.ai/whl/cu${FLASHINFER_CUDA_TAG}" && \
+#     flashinfer show-config
 
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
 RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir ".[dev]"
+
+# Debug: print key dependency versions for CI troubleshooting
+RUN python3 -c "\
+import transformers, torch, vllm; \
+print(f'transformers={transformers.__version__}'); \
+print(f'torch={torch.__version__}'); \
+print(f'vllm={vllm.__version__}'); \
+print(f'cuda={torch.version.cuda}'); \
+"
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
