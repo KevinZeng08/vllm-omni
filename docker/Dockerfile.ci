@@ -30,7 +30,8 @@ RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm 
 #       "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
 #       --extra-index-url "https://flashinfer.ai/whl/cu${FLASHINFER_CUDA_TAG}" && \
 #     flashinfer show-config
-
+# Uninstall the old nvidia-cublas-cu12 brought by torch/vllm before reinstalling the pinned version
+RUN uv pip uninstall --system nvidia-cublas-cu12
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
 # Use bash -c so that $(python3 -c ...) is expanded inside the container.
 RUN /bin/bash -c 'uv pip install --python "$(python3 -c "import sys; print(sys.executable)")" --no-cache-dir -e .'
