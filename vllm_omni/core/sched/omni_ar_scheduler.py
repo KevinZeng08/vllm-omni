@@ -245,10 +245,10 @@ class OmniARScheduler(VLLMScheduler):
                 # Skip requests that were recovered from KV load failure
                 continue
             request = self.requests.get(req_id)
-            if request is None:
+            if request is None or request.is_finished():
                 # The request is already finished. This can happen if the
                 # request is aborted while the model is executing it (e.g.,
-                # in pipeline parallelism).
+                # in pipeline parallelism or async scheduling).
                 continue
 
             req_index = model_runner_output.req_id_to_index[req_id]
@@ -475,15 +475,16 @@ class OmniARScheduler(VLLMScheduler):
 
         return engine_core_outputs
 
-    def _free_request(self, request: Request) -> dict[str, Any] | None:
+    def _free_request(self, request: Request, delay_free_blocks: bool = False) -> dict[str, Any] | None:
         # TODO(wzliu)! for offline mode, we should not end process until all data is transferred
         """Mark a request as finished and free its resources."""
+        assert request.is_finished()
 
         # 1. Standard cleanup parts from base _free_request
-        delay_free_blocks = False
+        connector_delay_free_blocks = False
         kv_xfer_params = None
         if self.connector is not None:
-            delay_free_blocks, kv_xfer_params = self._connector_finished(request)
+            connector_delay_free_blocks, kv_xfer_params = self._connector_finished(request)
 
         self.encoder_cache_manager.free(request)
         request_id = request.request_id
@@ -543,6 +544,7 @@ class OmniARScheduler(VLLMScheduler):
                 return kv_xfer_params
 
         # 3. Standard Freeing
+        delay_free_blocks |= connector_delay_free_blocks
         if not delay_free_blocks:
             self._free_blocks(request)
 

@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+import vllm.envs as envs
 from vllm.engine.arg_utils import EngineArgs
 from vllm.logger import init_logger
+from vllm.transformers_utils.gguf_utils import is_gguf
 from vllm.v1.engine.async_llm import AsyncEngineArgs
 
 from vllm_omni.config import OmniModelConfig
@@ -89,6 +91,19 @@ class OmniEngineArgs(EngineArgs):
         Returns:
             OmniModelConfig instance with all configuration fields set
         """
+        # GGUF files need a specific model loader path in vLLM.
+        if is_gguf(self.model):
+            self.quantization = self.load_format = "gguf"
+
+        if not envs.VLLM_ENABLE_V1_MULTIPROCESSING:
+            logger.warning(
+                "The global random seed is set to %d. Since "
+                "VLLM_ENABLE_V1_MULTIPROCESSING is set to False, this may "
+                "affect the random state of the Python process that "
+                "launched vLLM.",
+                self.seed,
+            )
+
         # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
 
@@ -215,6 +230,19 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
         Returns:
             OmniModelConfig instance with all configuration fields set
         """
+        # GGUF files need a specific model loader path in vLLM.
+        if is_gguf(self.model):
+            self.quantization = self.load_format = "gguf"
+
+        if not envs.VLLM_ENABLE_V1_MULTIPROCESSING:
+            logger.warning(
+                "The global random seed is set to %d. Since "
+                "VLLM_ENABLE_V1_MULTIPROCESSING is set to False, this may "
+                "affect the random state of the Python process that "
+                "launched vLLM.",
+                self.seed,
+            )
+
         # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
 

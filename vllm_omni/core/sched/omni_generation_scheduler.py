@@ -317,10 +317,10 @@ class OmniGenerationScheduler(VLLMScheduler):
                 # Skip requests that were recovered from KV load failure
                 continue
             request = self.requests.get(req_id)
-            if request is None:
+            if request is None or request.is_finished():
                 # The request is already finished. This can happen if the
                 # request is aborted while the model is executing it (e.g.,
-                # in pipeline parallelism).
+                # in pipeline parallelism or async scheduling).
                 continue
 
             req_index = model_runner_output.req_id_to_index[req_id]
