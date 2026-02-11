@@ -23,13 +23,22 @@ RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm 
 # Keep flashinfer runtime packages in version sync.
 # We derive the version from installed flashinfer-python (pulled by vllm)
 # and enforce the same version for flashinfer-cubin / flashinfer-jit-cache.
-# RUN FLASHINFER_VERSION="$(python3 -c 'import importlib.metadata as m; print(m.version("flashinfer-python"))')" && \
-#     FLASHINFER_CUDA_TAG="$(python3 -c 'import torch; print((torch.version.cuda or "12.4").replace(".", ""))')" && \
-#     uv pip install --system --upgrade --force-reinstall \
-#       "flashinfer-cubin==${FLASHINFER_VERSION}" \
-#       "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
-#       --extra-index-url "https://flashinfer.ai/whl/cu${FLASHINFER_CUDA_TAG}" && \
-#     flashinfer show-config
+RUN FLASHINFER_VERSION="$(python3 -c 'import importlib.metadata as m; \
+for n in ("flashinfer", "flashinfer-python"): \
+    \
+    try: \
+        print(m.version(n)); \
+        break; \
+    except m.PackageNotFoundError: \
+        pass \
+else: \
+    raise SystemExit("flashinfer package not found")')" && \
+    FLASHINFER_CUDA_TAG="$(python3 -c 'import torch; print((torch.version.cuda or "12.4").replace(".", ""))')" && \
+    uv pip install --system --upgrade --force-reinstall \
+      "flashinfer-cubin==${FLASHINFER_VERSION}" \
+      "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
+      --extra-index-url "https://flashinfer.ai/whl/cu${FLASHINFER_CUDA_TAG}" && \
+    flashinfer show-config
 
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
 RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir ".[dev]"
