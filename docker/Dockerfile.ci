@@ -32,7 +32,11 @@ RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm 
 #     flashinfer show-config
 
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
-RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir -e .
+# Use bash -c so that $(python3 -c ...) is expanded inside the container.
+RUN /bin/bash -c 'uv pip install --python "$(python3 -c "import sys; print(sys.executable)")" --no-cache-dir -e .'
+
+# Pin nvidia-cublas-cu12 after vllm-omni install so dependency resolution does not overwrite it
+RUN uv pip install --system --upgrade --force-reinstall "nvidia-cublas-cu12==12.9.1.4"
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
