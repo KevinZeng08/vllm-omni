@@ -1,3 +1,4 @@
 -r common.txt
 onnxruntime>=1.23.2
-fa3-fwd==0.0.1
+fa3-fwd==0.0.2
+nvidia-cublas-cu12==12.9.1.4

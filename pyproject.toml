@@ -48,8 +48,7 @@ dev = [
     "soundfile>=0.13.1",
     "imageio[ffmpeg]>=0.6.0",
     "opencv-python>=4.12.0.88",
-    "mooncake-transfer-engine==0.3.8.post1",
-    "transformers==4.57.6"
+    "mooncake-transfer-engine==0.3.8.post1"
 ]
 
 docs = [

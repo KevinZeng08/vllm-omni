@@ -20,9 +20,6 @@ RUN apt-get update && \
 # causing it to fall back to the older stable release from PyPI.
 RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm --extra-index-url https://wheels.vllm.ai/4a1550d22d7058e129d0e1257e726b3bf4a77025
 
-# Pin nvidia-cublas-cu12 to a specific version
-RUN uv pip install --system --upgrade --force-reinstall "nvidia-cublas-cu12==12.9.1.4"
-
 # # Keep flashinfer runtime packages in version sync.
 # # We derive the version from installed flashinfer (pulled by vllm)
 # # and enforce the same version for flashinfer-cubin / flashinfer-jit-cache.
@@ -35,7 +32,7 @@ RUN uv pip install --system --upgrade --force-reinstall "nvidia-cublas-cu12==12.
 #     flashinfer show-config
 
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
-RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir ".[dev]"
+RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir -e .
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
