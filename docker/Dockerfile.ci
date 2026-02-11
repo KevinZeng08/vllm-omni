@@ -34,17 +34,6 @@ RUN uv pip install --system --upgrade --force-reinstall --prerelease=allow vllm 
 # Install vllm-omni into the same uv-managed Python environment used by the base image.
 RUN uv pip install --python "$(python3 -c 'import sys; print(sys.executable)')" --no-cache-dir ".[dev]"
 
-# Debug: print key dependency versions for CI troubleshooting
-RUN python3 -c "\
-import transformers, torch, vllm; \
-print(f'transformers={transformers.__version__}'); \
-print(f'torch={torch.__version__}'); \
-print(f'vllm={vllm.__version__}'); \
-print(f'cuda={torch.version.cuda}'); \
-"
-
-RUN uv pip install transformers==4.57.6
-
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 ENTRYPOINT []
