@@ -144,7 +144,6 @@ class Qwen3MoeLLMModel(_Qwen3MoeLLMModel):
         positions: torch.Tensor,
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
-        *,
         capture_layer_indices: Sequence[int] | None = None,
         return_hidden_states: bool = False,
         deepstack_input_embeds: IntermediateTensors | None = None,

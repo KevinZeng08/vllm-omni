@@ -2,10 +2,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import vllm.envs as envs
-from vllm.engine.arg_utils import EngineArgs
+from vllm.engine.arg_utils import AsyncEngineArgs, EngineArgs
 from vllm.logger import init_logger
 from vllm.transformers_utils.gguf_utils import is_gguf
-from vllm.v1.engine.async_llm import AsyncEngineArgs
 
 from vllm_omni.config import OmniModelConfig
 from vllm_omni.plugins import load_omni_general_plugins
@@ -107,6 +106,22 @@ class OmniEngineArgs(EngineArgs):
         # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
 
+        # Keep compatibility when async args are constructed from partial payloads.
+        language_model_only = getattr(self, "language_model_only", False)
+        limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
+        enable_mm_embeds = getattr(self, "enable_mm_embeds", False)
+        interleave_mm_strings = getattr(self, "interleave_mm_strings", False)
+        media_io_kwargs = getattr(self, "media_io_kwargs", {})
+        skip_mm_profiling = getattr(self, "skip_mm_profiling", False)
+        mm_processor_kwargs = getattr(self, "mm_processor_kwargs", None)
+        mm_processor_cache_gb = getattr(self, "mm_processor_cache_gb", 4)
+        mm_processor_cache_type = getattr(self, "mm_processor_cache_type", None)
+        mm_shm_cache_max_object_size_mb = getattr(self, "mm_shm_cache_max_object_size_mb", 128)
+        mm_encoder_only = getattr(self, "mm_encoder_only", False)
+        mm_encoder_tp_mode = getattr(self, "mm_encoder_tp_mode", "weights")
+        mm_encoder_attn_backend = getattr(self, "mm_encoder_attn_backend", None)
+        video_pruning_rate = getattr(self, "video_pruning_rate", 0.0)
+
         # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
             "name": self.stage_connector_spec.get("name", "SharedMemoryConnector"),
@@ -147,20 +162,20 @@ class OmniEngineArgs(EngineArgs):
             skip_tokenizer_init=self.skip_tokenizer_init,
             enable_prompt_embeds=self.enable_prompt_embeds,
             served_model_name=self.served_model_name,
-            language_model_only=self.language_model_only,
-            limit_mm_per_prompt=self.limit_mm_per_prompt,
-            enable_mm_embeds=self.enable_mm_embeds,
-            interleave_mm_strings=self.interleave_mm_strings,
-            media_io_kwargs=self.media_io_kwargs,
-            skip_mm_profiling=self.skip_mm_profiling,
+            language_model_only=language_model_only,
+            limit_mm_per_prompt=limit_mm_per_prompt,
+            enable_mm_embeds=enable_mm_embeds,
+            interleave_mm_strings=interleave_mm_strings,
+            media_io_kwargs=media_io_kwargs,
+            skip_mm_profiling=skip_mm_profiling,
             config_format=self.config_format,
-            mm_processor_kwargs=self.mm_processor_kwargs,
-            mm_processor_cache_gb=self.mm_processor_cache_gb,
-            mm_processor_cache_type=self.mm_processor_cache_type,
-            mm_shm_cache_max_object_size_mb=self.mm_shm_cache_max_object_size_mb,
-            mm_encoder_only=self.mm_encoder_only,
-            mm_encoder_tp_mode=self.mm_encoder_tp_mode,
-            mm_encoder_attn_backend=self.mm_encoder_attn_backend,
+            mm_processor_kwargs=mm_processor_kwargs,
+            mm_processor_cache_gb=mm_processor_cache_gb,
+            mm_processor_cache_type=mm_processor_cache_type,
+            mm_shm_cache_max_object_size_mb=mm_shm_cache_max_object_size_mb,
+            mm_encoder_only=mm_encoder_only,
+            mm_encoder_tp_mode=mm_encoder_tp_mode,
+            mm_encoder_attn_backend=mm_encoder_attn_backend,
             pooler_config=self.pooler_config,
             logits_processor_pattern=self.logits_processor_pattern,
             generation_config=self.generation_config,
@@ -169,7 +184,7 @@ class OmniEngineArgs(EngineArgs):
             model_impl=self.model_impl,
             override_attention_dtype=self.override_attention_dtype,
             logits_processors=self.logits_processors,
-            video_pruning_rate=self.video_pruning_rate,
+            video_pruning_rate=video_pruning_rate,
             io_processor_plugin=self.io_processor_plugin,
             # Omni-specific fields
             stage_id=self.stage_id,
@@ -246,6 +261,22 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
         # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
 
+        # Keep compatibility when async args are constructed from partial payloads.
+        language_model_only = getattr(self, "language_model_only", False)
+        limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
+        enable_mm_embeds = getattr(self, "enable_mm_embeds", False)
+        interleave_mm_strings = getattr(self, "interleave_mm_strings", False)
+        media_io_kwargs = getattr(self, "media_io_kwargs", {})
+        skip_mm_profiling = getattr(self, "skip_mm_profiling", False)
+        mm_processor_kwargs = getattr(self, "mm_processor_kwargs", None)
+        mm_processor_cache_gb = getattr(self, "mm_processor_cache_gb", 4)
+        mm_processor_cache_type = getattr(self, "mm_processor_cache_type", None)
+        mm_shm_cache_max_object_size_mb = getattr(self, "mm_shm_cache_max_object_size_mb", 128)
+        mm_encoder_only = getattr(self, "mm_encoder_only", False)
+        mm_encoder_tp_mode = getattr(self, "mm_encoder_tp_mode", "weights")
+        mm_encoder_attn_backend = getattr(self, "mm_encoder_attn_backend", None)
+        video_pruning_rate = getattr(self, "video_pruning_rate", 0.0)
+
         # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
             "name": self.stage_connector_spec.get("name", "SharedMemoryConnector"),
@@ -286,20 +317,20 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
             skip_tokenizer_init=self.skip_tokenizer_init,
             enable_prompt_embeds=self.enable_prompt_embeds,
             served_model_name=self.served_model_name,
-            language_model_only=self.language_model_only,
-            limit_mm_per_prompt=self.limit_mm_per_prompt,
-            enable_mm_embeds=self.enable_mm_embeds,
-            interleave_mm_strings=self.interleave_mm_strings,
-            media_io_kwargs=self.media_io_kwargs,
-            skip_mm_profiling=self.skip_mm_profiling,
+            language_model_only=language_model_only,
+            limit_mm_per_prompt=limit_mm_per_prompt,
+            enable_mm_embeds=enable_mm_embeds,
+            interleave_mm_strings=interleave_mm_strings,
+            media_io_kwargs=media_io_kwargs,
+            skip_mm_profiling=skip_mm_profiling,
             config_format=self.config_format,
-            mm_processor_kwargs=self.mm_processor_kwargs,
-            mm_processor_cache_gb=self.mm_processor_cache_gb,
-            mm_processor_cache_type=self.mm_processor_cache_type,
-            mm_shm_cache_max_object_size_mb=self.mm_shm_cache_max_object_size_mb,
-            mm_encoder_only=self.mm_encoder_only,
-            mm_encoder_tp_mode=self.mm_encoder_tp_mode,
-            mm_encoder_attn_backend=self.mm_encoder_attn_backend,
+            mm_processor_kwargs=mm_processor_kwargs,
+            mm_processor_cache_gb=mm_processor_cache_gb,
+            mm_processor_cache_type=mm_processor_cache_type,
+            mm_shm_cache_max_object_size_mb=mm_shm_cache_max_object_size_mb,
+            mm_encoder_only=mm_encoder_only,
+            mm_encoder_tp_mode=mm_encoder_tp_mode,
+            mm_encoder_attn_backend=mm_encoder_attn_backend,
             pooler_config=self.pooler_config,
             logits_processor_pattern=self.logits_processor_pattern,
             generation_config=self.generation_config,
@@ -308,7 +339,7 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
             model_impl=self.model_impl,
             override_attention_dtype=self.override_attention_dtype,
             logits_processors=self.logits_processors,
-            video_pruning_rate=self.video_pruning_rate,
+            video_pruning_rate=video_pruning_rate,
             io_processor_plugin=self.io_processor_plugin,
             # Omni-specific fields
             stage_id=self.stage_id,
