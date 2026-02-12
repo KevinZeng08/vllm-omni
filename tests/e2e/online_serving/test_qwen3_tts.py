@@ -20,7 +20,7 @@ import pytest
 from tests.conftest import OmniServer
 from tests.utils import hardware_test
 
-MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+MODEL = "/scratch/dyvm6xra/dyvm6xrauser49/rebase/models/hub/models--Qwen--Qwen3-TTS-12Hz-0.6B-CustomVoice/snapshots/85e237c12c027371202489a0ec509ded67b5e4b5"
 
 
 def get_stage_config():
@@ -46,6 +46,7 @@ def omni_server():
             "120",
             "--trust-remote-code",
             "--enforce-eager",
+            "--disable-log-stats",
         ],
     ) as server:
         print("OmniServer started successfully")
