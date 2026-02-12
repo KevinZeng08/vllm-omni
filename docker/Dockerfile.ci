@@ -38,6 +38,12 @@ RUN /bin/bash -c 'uv pip install --python "$(python3 -c "import sys; print(sys.e
 
 # Pin nvidia-cublas-cu12 after vllm-omni install so dependency resolution does not overwrite it
 RUN uv pip install --system --upgrade --force-reinstall "nvidia-cublas-cu12==12.9.1.4"
+RUN /bin/bash -c 'FLASHINFER_CUDA_TAG="$(python3 -c "import torch; print((torch.version.cuda or \"12.4\").replace(\".\", \"\"))")" && \
+    uv pip install --system --upgrade --force-reinstall \
+      "flashinfer-python==0.6.3" \
+      "flashinfer-cubin==0.6.3" \
+      "flashinfer-jit-cache==0.6.3" \
+      --extra-index-url "https://flashinfer.ai/whl/cu${FLASHINFER_CUDA_TAG}"'
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
