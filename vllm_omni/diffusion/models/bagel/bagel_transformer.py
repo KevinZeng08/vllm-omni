@@ -25,8 +25,8 @@ from transformers.models.qwen2.modeling_qwen2 import (
 )
 from transformers.utils import ModelOutput
 from vllm.transformers_utils.configs.bagel import BagelConfig
-from vllm.vllm_flash_attn import flash_attn_varlen_func
 
+from vllm_omni.diffusion.attention.backends.utils.fa import flash_attn_varlen_func
 from vllm_omni.diffusion.layers.rope import RotaryEmbedding
 
 
