@@ -145,8 +145,10 @@ class DiffusionEngine:
         postprocess_start_time = time.perf_counter()
         outputs = self.post_process_func(output_data) if self.post_process_func is not None else output_data
         audio_payload = None
+        action_payload = None
         if isinstance(outputs, dict):
             audio_payload = outputs.get("audio")
+            action_payload = outputs.get("actions")
             outputs = outputs.get("video", outputs)
         postprocess_time = time.perf_counter() - postprocess_start_time
         logger.info(f"Post-processing completed in {postprocess_time:.4f} seconds")
@@ -202,6 +204,8 @@ class DiffusionEngine:
                 mm_output = {}
                 if audio_payload is not None:
                     mm_output["audio"] = audio_payload
+                if action_payload is not None:
+                    mm_output["actions"] = action_payload
                 return [
                     OmniRequestOutput.from_diffusion(
                         request_id=request_id,
@@ -260,6 +264,18 @@ class DiffusionEngine:
                                 if num_outputs == 1:
                                     sliced_audio = sliced_audio[0]
                         mm_output["audio"] = sliced_audio
+                    if action_payload is not None:
+                        sliced_action = action_payload
+                        if isinstance(action_payload, (list, tuple)):
+                            sliced_action = action_payload[start_idx:end_idx]
+                            if len(sliced_action) == 1:
+                                sliced_action = sliced_action[0]
+                        elif hasattr(action_payload, "shape") and getattr(action_payload, "shape", None) is not None:
+                            if len(action_payload.shape) > 0 and action_payload.shape[0] >= end_idx:
+                                sliced_action = action_payload[start_idx:end_idx]
+                                if num_outputs == 1:
+                                    sliced_action = sliced_action[0]
+                        mm_output["actions"] = sliced_action
                     results.append(
                         OmniRequestOutput.from_diffusion(
                             request_id=request_id,
