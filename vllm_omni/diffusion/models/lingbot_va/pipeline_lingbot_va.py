@@ -13,6 +13,7 @@ import PIL.Image
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from diffusers.pipelines.wan.pipeline_wan import prompt_clean
 from diffusers.video_processor import VideoProcessor
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.utils import load_image
@@ -286,6 +287,7 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
         dtype = dtype or self.dtype
 
         prompt = [prompt] if isinstance(prompt, str) else prompt
+        prompt = [prompt_clean(p) if isinstance(p, str) else p for p in prompt]
         batch_size = len(prompt)
 
         text_inputs = self.tokenizer(
