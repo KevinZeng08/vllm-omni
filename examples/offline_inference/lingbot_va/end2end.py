@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -17,25 +18,39 @@ from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.platforms import current_omni_platform
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_EXAMPLE_DIR = Path(__file__).resolve().parent
+DEFAULT_OBS_DIR = DEFAULT_EXAMPLE_DIR / "robotwin_obs"
+DEFAULT_PROMPT_FILE = DEFAULT_EXAMPLE_DIR / "robotwin_prompt.txt"
+# TODO: update to huggingface format
+DEFAULT_MODEL_DIR = REPO_ROOT / "lingbot-va" / "lingbot-va-posttrain-robotwin"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run LingBot-VA I2VA offline inference")
     parser.add_argument(
         "--model",
         type=str,
-        default="/root/vllm-omni/lingbot-va/lingbot-va-posttrain-robotwin",
+        default=str(DEFAULT_MODEL_DIR),
         help="LingBot-VA checkpoint path",
     )
     parser.add_argument(
         "--obs-dir",
         type=str,
-        default="/root/vllm-omni/lingbot-va/example/robotwin",
+        default=str(DEFAULT_OBS_DIR),
         help="Directory containing robotwin camera images",
     )
     parser.add_argument(
         "--prompt",
         type=str,
-        default="Grab the medium-sized white mug, rotate it, place it on the table, and hook it onto the smooth dark gray rack.",
-        help="Task instruction",
+        default=None,
+        help="Task instruction. If not provided, read from --prompt-file.",
+    )
+    parser.add_argument(
+        "--prompt-file",
+        type=str,
+        default=str(DEFAULT_PROMPT_FILE),
+        help="Path to prompt text file used when --prompt is not provided.",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--num-chunks", type=int, default=2, help="Number of autoregressive chunks")
@@ -82,11 +97,25 @@ def build_prompt(obs_dir: Path, prompt: str) -> dict:
     }
 
 
+def resolve_prompt(prompt: Optional[str], prompt_file: Path) -> str:
+    if prompt is not None and prompt.strip():
+        return prompt
+
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+
+    content = prompt_file.read_text(encoding="utf-8").strip()
+    if not content:
+        raise ValueError(f"Prompt file is empty: {prompt_file}")
+    return content
+
+
 def main() -> None:
     args = parse_args()
 
     obs_dir = Path(args.obs_dir)
-    prompt_data = build_prompt(obs_dir, args.prompt)
+    prompt_text = resolve_prompt(args.prompt, Path(args.prompt_file))
+    prompt_data = build_prompt(obs_dir, prompt_text)
 
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
     omni = Omni(
