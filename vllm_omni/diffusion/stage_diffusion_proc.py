@@ -86,6 +86,15 @@ class StageDiffusionProc:
             else:
                 raise FileNotFoundError("model_index.json not found")
         except (AttributeError, OSError, ValueError, FileNotFoundError):
+            # LingBot-VA style checkpoints may only have component folders
+            # (tokenizer/text_encoder/transformer/vae) without root config.
+            tf_cfg = get_hf_file_to_dict("transformer/config.json", od_config.model)
+            if tf_cfg is not None and tf_cfg.get("_class_name") == "WanTransformer3DModel" and "action_dim" in tf_cfg:
+                od_config.model_class_name = "LingBotVAPipeline"
+                od_config.tf_model_config = TransformerConfig.from_dict(tf_cfg)
+                od_config.update_multimodal_support()
+                return
+
             cfg = get_hf_file_to_dict("config.json", od_config.model)
             if cfg is None:
                 raise ValueError(f"Could not find config.json or model_index.json for model {od_config.model}")

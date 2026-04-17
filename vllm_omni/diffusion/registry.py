@@ -188,6 +188,11 @@ _DIFFUSION_MODELS = {
         "pipeline_omnivoice",
         "OmniVoicePipeline",
     ),
+    "LingBotVAPipeline": (
+        "lingbot_va",
+        "pipeline_lingbot_va",
+        "LingBotVAPipeline",
+    ),
 }
 
 
@@ -204,6 +209,7 @@ DiffusionModelRegistry = _ModelRegistry(
 _NO_CACHE_ACCELERATION = {
     # Pipelines that do not support cache acceleration (cache_dit / tea_cache).
     "NextStep11Pipeline",
+    "LingBotVAPipeline",
 }
 
 
@@ -375,6 +381,7 @@ _DIFFUSION_POST_PROCESS_FUNCS = {
     "HunyuanVideo15ImageToVideoPipeline": "get_hunyuan_video_15_i2v_post_process_func",
     "MagiHumanPipeline": "get_magi_human_post_process_func",
     "OmniVoicePipeline": "get_omnivoice_post_process_func",
+    "LingBotVAPipeline": "get_lingbot_va_post_process_func",
 }
 
 _DIFFUSION_PRE_PROCESS_FUNCS = {
@@ -394,6 +401,7 @@ _DIFFUSION_PRE_PROCESS_FUNCS = {
     "HeliosPyramidPipeline": "get_helios_pre_process_func",
     "HunyuanVideo15ImageToVideoPipeline": "get_hunyuan_video_15_i2v_pre_process_func",
     "MagiHumanPipeline": "get_magi_human_pre_process_func",
+    "LingBotVAPipeline": "get_lingbot_va_pre_process_func",
 }
 
 

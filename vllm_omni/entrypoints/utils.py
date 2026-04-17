@@ -10,6 +10,7 @@ from vllm.transformers_utils.config import get_config, get_hf_file_to_dict
 from vllm.transformers_utils.repo_utils import file_or_path_exists
 
 from vllm_omni.config.yaml_util import create_config, load_yaml_config, merge_configs
+from vllm_omni.diffusion.utils.hf_utils import is_diffusion_model
 from vllm_omni.entrypoints.stage_utils import _to_dict
 from vllm_omni.platforms import current_omni_platform
 
@@ -250,6 +251,16 @@ def resolve_model_config_path(model: str) -> str:
             except Exception as e:
                 raise ValueError(f"Failed to read config.json for model: {model}. Error: {e}") from e
         else:
+            # Some diffusion-style checkpoints (e.g. LingBot-VA) don't provide
+            # root config.json/model_index.json. Let caller fall back to the
+            # default diffusion single-stage config.
+            if is_diffusion_model(model):
+                logger.info(
+                    "Model '%s' detected as diffusion without root config; "
+                    "falling back to default diffusion stage config.",
+                    model,
+                )
+                return None
             raise ValueError(
                 f"Could not determine model_type for model: {model}. "
                 f"Model is not in standard transformers format and does not have model_index.json. "
