@@ -7,9 +7,7 @@ Run LingBot-VA Image-to-Video-Action offline inference in vllm-omni.
 Model: `robbyant/lingbot-va-posttrain-robotwin`
 
 ```bash
-# Download to a local path used by this example
-huggingface-cli download robbyant/lingbot-va-posttrain-robotwin \
-  --local-dir /root/vllm-omni/models/lingbot-va-posttrain-robotwin
+huggingface-cli download robbyant/lingbot-va-posttrain-robotwin
 ```
 
 ## 2) Example Assets
@@ -30,17 +28,18 @@ LingBot canonical names and short names (png/jpg/jpeg):
 ## 3) Run
 
 ```bash
-python examples/offline_inference/lingbot_va/end2end.py \
-  --model /root/vllm-omni/models/lingbot-va-posttrain-robotwin \
-  --obs-dir examples/offline_inference/lingbot_va/robotwin_obs \
-  --prompt-file examples/offline_inference/lingbot_va/robotwin_prompt.txt \
+cd examples/offline_inference/lingbot_va/
+python end2end.py \
+  --obs-dir robotwin_obs \
+  --prompt-file robotwin_prompt.txt \
   --num-chunks 10
 ```
 
 or use the helper script:
 
 ```bash
-bash examples/offline_inference/lingbot_va/run_vllm_omni_lingbot_i2va.sh
+cd examples/offline_inference/lingbot_va/
+bash run_vllm_omni_lingbot_i2va.sh
 ```
 
 Outputs:
