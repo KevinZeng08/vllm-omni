@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import torch
 
-
+# TODO: separate kv_cache management and other stateful information as needed.
 @dataclass
 class LingBotVAState:
     cache_name: str = "pos"

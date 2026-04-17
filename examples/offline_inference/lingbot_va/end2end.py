@@ -18,12 +18,10 @@ from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.platforms import current_omni_platform
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_EXAMPLE_DIR = Path(__file__).resolve().parent
 DEFAULT_OBS_DIR = DEFAULT_EXAMPLE_DIR / "robotwin_obs"
 DEFAULT_PROMPT_FILE = DEFAULT_EXAMPLE_DIR / "robotwin_prompt.txt"
-# TODO: update to huggingface format
-DEFAULT_MODEL_DIR = REPO_ROOT / "lingbot-va" / "lingbot-va-posttrain-robotwin"
+DEFAULT_MODEL = "robbyant/lingbot-va-posttrain-robotwin"
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,8 +29,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default=str(DEFAULT_MODEL_DIR),
-        help="LingBot-VA checkpoint path",
+        default=DEFAULT_MODEL,
+        help="LingBot-VA checkpoint path or Hugging Face repo id",
     )
     parser.add_argument(
         "--obs-dir",
