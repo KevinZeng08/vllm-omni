@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from diffusers.utils import export_to_video
 
+from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.platforms import current_omni_platform
@@ -52,6 +53,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--num-chunks", type=int, default=2, help="Number of autoregressive chunks")
+    parser.add_argument(
+        "--cfg-parallel-size",
+        type=int,
+        default=1,
+        choices=[1, 2],
+        help="CFG parallel size (requires matching GPU count when > 1).",
+    )
     parser.add_argument("--output-video", type=str, default="lingbot_i2va.mp4", help="Output video path")
     parser.add_argument("--output-actions", type=str, default="lingbot_actions.npy", help="Output actions path")
     return parser.parse_args()
@@ -116,9 +124,13 @@ def main() -> None:
     prompt_data = build_prompt(obs_dir, prompt_text)
 
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
+    parallel_config = DiffusionParallelConfig(
+        cfg_parallel_size=args.cfg_parallel_size,
+    )
     omni = Omni(
         model=args.model,
         model_class_name="LingBotVAPipeline",
+        parallel_config=parallel_config,
     )
 
     outputs = omni.generate(
@@ -162,6 +174,7 @@ def main() -> None:
     print(f"Actions saved to: {output_actions}")
     print(f"Video shape: {video_np.shape}")
     print(f"Actions shape: {actions_np.shape}")
+    print(f"CFG parallel size: {args.cfg_parallel_size}")
 
     omni.close()
 
