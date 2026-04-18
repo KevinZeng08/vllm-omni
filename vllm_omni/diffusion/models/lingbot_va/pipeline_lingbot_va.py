@@ -378,20 +378,36 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
         action = action.squeeze(0).detach().cpu().numpy()
         return action[self.used_action_channel_ids]
 
-    def _repeat_input_for_cfg(self, input_dict: dict[str, Any]):
-        out = dict(input_dict)
-        if self.use_cfg:
-            out["noisy_latents"] = out["noisy_latents"].repeat(2, 1, 1, 1, 1)
-            out["text_emb"] = torch.cat(
-                [self.prompt_embeds.to(self.dtype).clone(), self.negative_prompt_embeds.to(self.dtype).clone()],
-                dim=0,
+    def predict_noise(self, **kwargs: Any) -> torch.Tensor:
+        base_input = kwargs["base_input"]
+        text_emb = kwargs["text_emb"]
+        update_cache = kwargs["update_cache"]
+        base_cache_name = kwargs["base_cache_name"]
+        action_mode = kwargs["action_mode"]
+        is_negative = kwargs.get("is_negative", False)
+        cache_name = base_cache_name + ("_neg" if is_negative else "_pos")
+        model_input = {
+            **base_input,
+            "text_emb": text_emb,
+            "grid_id": base_input["grid_id"][None],
+            "timesteps": base_input["timesteps"][None],
+        }
+        pred = self.transformer(
+            model_input,
+            update_cache=update_cache,
+            cache_name=cache_name,
+            action_mode=action_mode,
+        )
+        if not action_mode:
+            pred = data_seq_to_patch(
+                self.patch_size,
+                pred,
+                self.frame_chunk_size,
+                self.latent_height,
+                self.latent_width,
+                batch_size=1,
             )
-            out["grid_id"] = out["grid_id"][None].repeat(2, 1, 1)
-            out["timesteps"] = out["timesteps"][None].repeat(2, 1)
-        else:
-            out["grid_id"] = out["grid_id"][None]
-            out["timesteps"] = out["timesteps"][None]
-        return out
+        return pred
 
     def _prepare_latent_input(
         self,
@@ -495,7 +511,8 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
 
     def _reset(self, prompt: str):
         self.state.reset()
-        self.transformer.clear_cache(self.state.cache_name)
+        self.transformer.clear_cache(self.state.cache_name + "_pos")
+        self.transformer.clear_cache(self.state.cache_name + "_neg")
         self.streaming_vae.clear_cache()
         if self.streaming_vae_half is not None:
             self.streaming_vae_half.clear_cache()
@@ -513,14 +530,24 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
         action_token_per_chunk = self.frame_chunk_size * self.action_per_frame
 
         self.transformer.create_empty_cache(
-            self.state.cache_name,
+            self.state.cache_name + "_pos",
             self.attn_window,
             latent_token_per_chunk,
             action_token_per_chunk,
             dtype=self.dtype,
             device=self.device,
-            batch_size=2 if self.use_cfg else 1,
+            batch_size=1,
         )
+        if self.use_cfg:
+            self.transformer.create_empty_cache(
+                self.state.cache_name + "_neg",
+                self.attn_window,
+                latent_token_per_chunk,
+                action_token_per_chunk,
+                dtype=self.dtype,
+                device=self.device,
+                batch_size=1,
+            )
 
         self.action_mask = torch.zeros([self.action_dim]).bool()
         self.action_mask[self.used_action_channel_ids] = True
@@ -591,28 +618,36 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
                     None,
                     frame_st_id=frame_st_id,
                 )
-                video_noise_pred = self.transformer(
-                    self._repeat_input_for_cfg(input_dict["latent_res_lst"]),
-                    update_cache=1 if last_step else 0,
-                    cache_name=self.state.cache_name,
+                update_cache = 1 if last_step else 0
+                base_latent_input = input_dict["latent_res_lst"]
+                positive_kwargs = dict(
+                    base_input=base_latent_input,
+                    text_emb=self.prompt_embeds.to(self.dtype).clone(),
+                    update_cache=update_cache,
+                    base_cache_name=self.state.cache_name,
                     action_mode=False,
+                    is_negative=False,
                 )
-
-                if not last_step or self.video_exec_step != -1:
-                    video_noise_pred = data_seq_to_patch(
-                        self.patch_size,
-                        video_noise_pred,
-                        self.frame_chunk_size,
-                        self.latent_height,
-                        self.latent_width,
-                        batch_size=2 if self.use_cfg else 1,
+                negative_kwargs = (
+                    dict(
+                        base_input=base_latent_input,
+                        text_emb=self.negative_prompt_embeds.to(self.dtype).clone(),
+                        update_cache=update_cache,
+                        base_cache_name=self.state.cache_name,
+                        action_mode=False,
+                        is_negative=True,
                     )
-                    if self.guidance_scale > 1:
-                        video_noise_pred = video_noise_pred[1:] + self.guidance_scale * (
-                            video_noise_pred[:1] - video_noise_pred[1:]
-                        )
-                    else:
-                        video_noise_pred = video_noise_pred[:1]
+                    if self.guidance_scale > 1
+                    else None
+                )
+                video_noise_pred = self.predict_noise_maybe_with_cfg(
+                    do_true_cfg=(self.guidance_scale > 1),
+                    true_cfg_scale=self.guidance_scale,
+                    positive_kwargs=positive_kwargs,
+                    negative_kwargs=negative_kwargs,
+                    cfg_normalize=False,
+                )
+                if not last_step or self.video_exec_step != -1:
                     latents = self.scheduler.step(video_noise_pred, t, latents)
                 if frame_st_id == 0 and latent_cond is not None:
                     latents[:, :, 0:1] = latent_cond
@@ -638,25 +673,41 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
                     action_cond,
                     frame_st_id=frame_st_id,
                 )
-                action_noise_pred = self.transformer(
-                    self._repeat_input_for_cfg(input_dict["action_res_lst"]),
-                    update_cache=1 if last_step else 0,
-                    cache_name=self.state.cache_name,
+                update_cache = 1 if last_step else 0
+                base_action_input = input_dict["action_res_lst"]
+                positive_kwargs = dict(
+                    base_input=base_action_input,
+                    text_emb=self.prompt_embeds.to(self.dtype).clone(),
+                    update_cache=update_cache,
+                    base_cache_name=self.state.cache_name,
                     action_mode=True,
+                    is_negative=False,
                 )
-
+                negative_kwargs = (
+                    dict(
+                        base_input=base_action_input,
+                        text_emb=self.negative_prompt_embeds.to(self.dtype).clone(),
+                        update_cache=update_cache,
+                        base_cache_name=self.state.cache_name,
+                        action_mode=True,
+                        is_negative=True,
+                    )
+                    if self.action_guidance_scale > 1
+                    else None
+                )
+                action_noise_pred = self.predict_noise_maybe_with_cfg(
+                    do_true_cfg=(self.action_guidance_scale > 1),
+                    true_cfg_scale=self.action_guidance_scale,
+                    positive_kwargs=positive_kwargs,
+                    negative_kwargs=negative_kwargs,
+                    cfg_normalize=False,
+                )
                 if not last_step:
                     action_noise_pred = rearrange(
                         action_noise_pred,
                         "b (f n) c -> b c f n 1",
                         f=self.frame_chunk_size,
                     )
-                    if self.action_guidance_scale > 1:
-                        action_noise_pred = action_noise_pred[1:] + self.action_guidance_scale * (
-                            action_noise_pred[:1] - action_noise_pred[1:]
-                        )
-                    else:
-                        action_noise_pred = action_noise_pred[:1]
                     actions = self.action_scheduler.step(action_noise_pred, t, actions)
                 if frame_st_id == 0 and action_cond is not None:
                     actions[:, :, 0:1] = action_cond
@@ -726,7 +777,8 @@ class LingBotVAPipeline(nn.Module, CFGParallelMixin):
         pred_action = torch.cat(pred_action_lst, dim=1).flatten(1)
         actions_seq = pred_action.transpose(0, 1).cpu().numpy()
 
-        self.transformer.clear_cache(self.state.cache_name)
+        self.transformer.clear_cache(self.state.cache_name + "_pos")
+        self.transformer.clear_cache(self.state.cache_name + "_neg")
         self.streaming_vae.clear_cache()
         if self.streaming_vae_half is not None:
             self.streaming_vae_half.clear_cache()
